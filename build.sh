@@ -79,15 +79,25 @@ while IFS=/ read -r GOOS GOARCH; do
     esac
     output="${OUT_DIR}/${MODULE}-${GOOS}-${GOARCH}${ext}"
 
+    # 先尝试静态编译（CGO_ENABLED=0，无 .so 依赖）
     if CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
         go build -buildvcs=false -ldflags="$LDFLAGS" -o "$output" . 2>/dev/null; then
-        echo "  [OK]   $GOOS/$GOARCH"
+        echo "  [OK]   $GOOS/$GOARCH (静态)"
         built=$((built + 1))
-    else
-        echo "  [SKIP] $GOOS/$GOARCH (需要 cgo，已跳过)"
-        skipped=$((skipped + 1))
-        rm -f "$output"
+        continue
     fi
+
+    # 静态编译失败（该平台强制要求 cgo 外部链接）：退回动态编译，不跳过
+    if CGO_ENABLED=1 GOOS="$GOOS" GOARCH="$GOARCH" \
+        go build -buildvcs=false -ldflags="$LDFLAGS" -o "$output" . 2>/dev/null; then
+        echo "  [OK]   $GOOS/$GOARCH (动态/cgo)"
+        built=$((built + 1))
+        continue
+    fi
+
+    echo "  [SKIP] $GOOS/$GOARCH (无可用工具链，已跳过)"
+    skipped=$((skipped + 1))
+    rm -f "$output"
 done <<< "$PLATFORMS"
 
 echo "==> 完成：成功 $built 个，跳过 $skipped 个，产物在 $OUT_DIR/"
