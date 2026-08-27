@@ -1,0 +1,14 @@
+services:
+  gateway:
+    build: .
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      DATA_DIR: /app/data
+      LISTEN: ":8080"
+      # INIT_ROOT_USER: admin
+      # INIT_ROOT_PASS: changeme
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

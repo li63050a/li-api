@@ -1,10 +1,13 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"api-gateway/db"
 )
 
 // SiteConfig 站点展示设置（扩展功能：站点信息）
@@ -22,7 +25,7 @@ var (
 	siteLoaded bool
 )
 
-// GetSite 返回当前站点配置（懒加载，文件不存在用默认值）
+// GetSite 返回当前站点配置（懒加载，无数据用默认值）
 func GetSite() SiteConfig {
 	siteMu.RLock()
 	if siteLoaded {
@@ -37,29 +40,33 @@ func GetSite() SiteConfig {
 	if siteLoaded {
 		return siteConfig
 	}
-	path := filepath.Join(DataDir(), "site.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
+	if !loadSiteFromDB() {
+		if migrated, _ := migrateSiteFromJSON(); migrated {
+			loadSiteFromDB()
+		} else {
 			siteConfig = SiteConfig{}
-			siteLoaded = true
 			_ = saveSite()
-			return siteConfig
 		}
-		siteConfig = SiteConfig{}
-		siteLoaded = true
-		return siteConfig
-	}
-	if len(data) == 0 {
-		siteConfig = SiteConfig{}
-	} else if err := json.Unmarshal(data, &siteConfig); err != nil {
-		siteConfig = SiteConfig{}
 	}
 	siteLoaded = true
 	return siteConfig
 }
 
-// SaveSite 保存站点配置（tmp + rename 原子写入）
+// loadSiteFromDB 从 SQLite 读取站点配置到内存；成功返回 true
+func loadSiteFromDB() bool {
+	var data sql.NullString
+	if err := db.DB.QueryRow(`SELECT data FROM site WHERE id=1`).Scan(&data); err != nil || !data.Valid || data.String == "" {
+		return false
+	}
+	var s SiteConfig
+	if json.Unmarshal([]byte(data.String), &s) != nil {
+		return false
+	}
+	siteConfig = s
+	return true
+}
+
+// SaveSite 保存站点配置
 func SaveSite(s SiteConfig) error {
 	siteMu.Lock()
 	siteConfig = s
@@ -70,14 +77,42 @@ func SaveSite(s SiteConfig) error {
 }
 
 func saveSite() error {
-	path := filepath.Join(DataDir(), "site.json")
-	data, err := json.MarshalIndent(siteConfig, "", "  ")
+	data, err := json.Marshal(siteConfig)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tx, err := db.DB.Begin()
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if _, err := tx.Exec("DELETE FROM site"); err != nil {
+		tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec("INSERT INTO site(id,data) VALUES(1,?)", string(data)); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// migrateSiteFromJSON 首次启动时把旧 site.json 迁移进 SQLite
+func migrateSiteFromJSON() (bool, error) {
+	path := filepath.Join(DataDir(), "site.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var s SiteConfig
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &s); err != nil {
+			return false, err
+		}
+	}
+	siteConfig = s
+	if err := saveSite(); err != nil {
+		return false, err
+	}
+	db.RenameJSONToBak(DataDir(), "site.json")
+	return true, nil
 }

@@ -22,6 +22,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u, ok := model.VerifyUser(cred.Username, cred.Password); ok {
+		// 已启用 2FA 的用户：先不签发会话，返回 need_2fa，待 TOTP 校验后发会话
+		if u.TwoFAEnabled == 1 {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"need_2fa": true,
+				"username": u.Username,
+			})
+			return
+		}
 		tok := model.CreateSession(u.Username)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"token":    tok,

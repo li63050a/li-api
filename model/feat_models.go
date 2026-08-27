@@ -1,10 +1,13 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"api-gateway/db"
 )
 
 // PriceEntry 单个模型的价格倍率
@@ -27,50 +30,71 @@ func modelPricesPath() string {
 	return filepath.Join(DataDir(), "model_prices.json")
 }
 
-// loadModelPrices 从磁盘加载价格表；文件不存在则用空表并写入默认值。
+// loadModelPrices 从 SQLite 加载价格表；无记录时回退到迁移旧 JSON 或写入空表。
 func loadModelPrices() (ModelPrices, error) {
 	modelPricesMu.Lock()
 	defer modelPricesMu.Unlock()
 	if modelPricesOk {
 		return modelPrices, nil
 	}
-	path := modelPricesPath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			modelPrices = ModelPrices{}
-			modelPricesOk = true
-			_ = saveModelPricesLocked()
-			return modelPrices, nil
+
+	var dataText string
+	err := db.DB.QueryRow("SELECT data FROM model_prices WHERE id = 1").Scan(&dataText)
+	if err == nil {
+		m := ModelPrices{}
+		if len(dataText) > 0 {
+			if err := json.Unmarshal([]byte(dataText), &m); err != nil {
+				return nil, err
+			}
 		}
+		if m == nil {
+			m = ModelPrices{}
+		}
+		modelPrices = m
+		modelPricesOk = true
+		return modelPrices, nil
+	}
+	if err != sql.ErrNoRows {
 		return nil, err
 	}
-	m := ModelPrices{}
-	if len(data) > 0 {
-		if err := json.Unmarshal(data, &m); err != nil {
-			return nil, err
+
+	path := modelPricesPath()
+	if data, ferr := os.ReadFile(path); ferr == nil {
+		m := ModelPrices{}
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &m); err != nil {
+				return nil, err
+			}
 		}
+		if m == nil {
+			m = ModelPrices{}
+		}
+		modelPrices = m
+		modelPricesOk = true
+		if serr := saveModelPricesLocked(); serr != nil {
+			return nil, serr
+		}
+		db.RenameJSONToBak(DataDir(), "model_prices.json")
+		return modelPrices, nil
 	}
-	if m == nil {
-		m = ModelPrices{}
-	}
-	modelPrices = m
+
+	modelPrices = ModelPrices{}
 	modelPricesOk = true
+	_ = saveModelPricesLocked()
 	return modelPrices, nil
 }
 
 // saveModelPricesLocked 必须在持有 modelPricesMu 时调用
 func saveModelPricesLocked() error {
-	path := modelPricesPath()
-	data, err := json.MarshalIndent(modelPrices, "", "  ")
+	data, err := json.Marshal(modelPrices)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := db.DB.Exec("DELETE FROM model_prices WHERE id = 1"); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	_, err = db.DB.Exec("INSERT INTO model_prices (id, data) VALUES (1, ?)", string(data))
+	return err
 }
 
 // GetModelPrices 返回价格表副本（懒初始化）

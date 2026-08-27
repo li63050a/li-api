@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
 // ErrNotFound 表示路由不存在
@@ -64,7 +67,7 @@ var (
 	dataDir = "data"
 )
 
-// Init 加载数据目录与路由文件，不存在则初始化为空
+// Init 加载数据目录，打开 SQLite，并从库中加载路由（首次运行自动从旧 JSON 迁移）
 func Init() error {
 	if dir := os.Getenv("DATA_DIR"); dir != "" {
 		dataDir = dir
@@ -72,24 +75,19 @@ func Init() error {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
 	}
-	path := filepath.Join(dataDir, "routes.json")
-	data, err := os.ReadFile(path)
+	if err := db.Open(dataDir); err != nil {
+		return err
+	}
+	rs, err := loadRoutesFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			routes = []Route{}
-			nextID = 1
-			return nil
+		return err
+	}
+	if len(rs) == 0 {
+		if migrated, merr := migrateRoutesFromJSON(); merr == nil && migrated {
+			rs, _ = loadRoutesFromDB()
 		}
-		return err
 	}
-	if len(data) == 0 {
-		routes = []Route{}
-		nextID = 1
-		return nil
-	}
-	if err := json.Unmarshal(data, &routes); err != nil {
-		return err
-	}
+	routes = rs
 	nextID = 1
 	for _, r := range routes {
 		if r.ID >= nextID {
@@ -99,17 +97,78 @@ func Init() error {
 	return nil
 }
 
+func loadRoutesFromDB() ([]Route, error) {
+	rows, err := db.DB.Query(`SELECT id,name,prefix,upstream_url,auth_type,auth_key,auth_value,auth_values,timeout,need_api_key,allowed_paths,rate_limit,enable,created_at,updated_at FROM routes ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Route
+	for rows.Next() {
+		var r Route
+		var created, updated sql.NullString
+		var needAPIKey, enable int
+		if err := rows.Scan(&r.ID, &r.Name, &r.Prefix, &r.UpstreamURL, &r.AuthType, &r.AuthKey, &r.AuthValue, &r.AuthValues, &r.Timeout, &needAPIKey, &r.AllowedPaths, &r.RateLimit, &enable, &created, &updated); err != nil {
+			return nil, err
+		}
+		r.NeedAPIKey = needAPIKey != 0
+		r.Enable = enable != 0
+		r.CreatedAt = db.StrToTime(created.String)
+		r.UpdatedAt = db.StrToTime(updated.String)
+		out = append(out, r)
+	}
+	return out, nil
+}
+
 func save() error {
-	path := filepath.Join(dataDir, "routes.json")
-	data, err := json.MarshalIndent(routes, "", "  ")
+	return saveRoutesToDB(routes)
+}
+
+func saveRoutesToDB(rs []Route) error {
+	tx, err := db.DB.Begin()
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := tx.Exec("DELETE FROM routes"); err != nil {
+		tx.Rollback()
 		return err
 	}
-	return os.Rename(tmp, path)
+	for _, r := range rs {
+		if _, err := tx.Exec(`INSERT INTO routes(id,name,prefix,upstream_url,auth_type,auth_key,auth_value,auth_values,timeout,need_api_key,allowed_paths,rate_limit,enable,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			r.ID, r.Name, r.Prefix, r.UpstreamURL, r.AuthType, r.AuthKey, r.AuthValue, r.AuthValues, r.Timeout, boolToInt(r.NeedAPIKey), r.AllowedPaths, r.RateLimit, boolToInt(r.Enable), db.TimeToStr(r.CreatedAt), db.TimeToStr(r.UpdatedAt)); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func migrateRoutesFromJSON() (bool, error) {
+	path := filepath.Join(dataDir, "routes.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var rs []Route
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &rs); err != nil {
+			return false, err
+		}
+	}
+	if err := saveRoutesToDB(rs); err != nil {
+		return false, err
+	}
+	db.RenameJSONToBak(dataDir, "routes.json")
+	return true, nil
+}
+
+// boolToInt 布尔转数据库存储用的 0/1
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // GetAll 返回所有路由（含禁用），用于管理后台展示

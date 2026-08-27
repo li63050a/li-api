@@ -4,6 +4,7 @@ import (
 	"api-gateway/model"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -88,6 +89,7 @@ func markChannelFailure(id int) {
 		failCount.Store(id, new(int64))
 		log.Printf("channel %d auto-disabled after %d consecutive failures", id, failureThreshold)
 		notifyChannelDisabled(id)
+		_ = NotifyEvent("channel_disabled", fmt.Sprintf("渠道 %d 连续失败已达阈值，已自动禁用", id))
 	}
 }
 
@@ -156,7 +158,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 令牌级模型白名单校验
+	// 令牌级模型白名单校验（别名先解析为真实模型）
+	modelName = ResolveModel(modelName)
 	if !model.TokenModelAllowed(tok.Models, modelName) {
 		http.Error(w, "Model not allowed for this token", http.StatusForbidden)
 		return
@@ -420,6 +423,12 @@ func serveModels(w http.ResponseWriter, group string) {
 			if m = strings.TrimSpace(m); m != "" {
 				set[m] = true
 			}
+		}
+	}
+	// 追加模型别名（alias.* 的键名，供用户直接调用）
+	for name := range model.KVGetAll("alias.") {
+		if name = strings.TrimSpace(name); name != "" {
+			set[name] = true
 		}
 	}
 	data := make([]map[string]string, 0, len(set))

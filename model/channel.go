@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
 // ErrChannelNotFound 表示渠道不存在
@@ -39,26 +42,18 @@ var (
 	chanNext int
 )
 
-// InitChannels 加载渠道数据
+// InitChannels 从 SQLite 加载渠道（首次运行自动从旧 JSON 迁移）
 func InitChannels() error {
-	path := filepath.Join(dataDir, "channels.json")
-	data, err := os.ReadFile(path)
+	cs, err := loadChannelsFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			channels = []Channel{}
-			chanNext = 1
-			return nil
+		return err
+	}
+	if len(cs) == 0 {
+		if migrated, _ := migrateChannelsFromJSON(); migrated {
+			cs, _ = loadChannelsFromDB()
 		}
-		return err
 	}
-	if len(data) == 0 {
-		channels = []Channel{}
-		chanNext = 1
-		return nil
-	}
-	if err := json.Unmarshal(data, &channels); err != nil {
-		return err
-	}
+	channels = cs
 	chanNext = 1
 	for _, c := range channels {
 		if c.ID >= chanNext {
@@ -68,17 +63,67 @@ func InitChannels() error {
 	return nil
 }
 
+func loadChannelsFromDB() ([]Channel, error) {
+	rows, err := db.DB.Query(`SELECT id,name,type,base_url,keys,auth_type,auth_key,models,model_mapping,grp,priority,weight,rate_limit,status,created_at,updated_at FROM channels ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Channel
+	for rows.Next() {
+		var c Channel
+		var created, updated sql.NullString
+		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.BaseURL, &c.Keys, &c.AuthType, &c.AuthKey, &c.Models, &c.ModelMapping, &c.Group, &c.Priority, &c.Weight, &c.RateLimit, &c.Status, &created, &updated); err != nil {
+			return nil, err
+		}
+		c.CreatedAt = db.StrToTime(created.String)
+		c.UpdatedAt = db.StrToTime(updated.String)
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 func saveChannels() error {
-	path := filepath.Join(dataDir, "channels.json")
-	data, err := json.MarshalIndent(channels, "", "  ")
+	return saveChannelsToDB(channels)
+}
+
+func saveChannelsToDB(cs []Channel) error {
+	tx, err := db.DB.Begin()
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := tx.Exec("DELETE FROM channels"); err != nil {
+		tx.Rollback()
 		return err
 	}
-	return os.Rename(tmp, path)
+	for _, c := range cs {
+		if _, err := tx.Exec(`INSERT INTO channels(id,name,type,base_url,keys,auth_type,auth_key,models,model_mapping,grp,priority,weight,rate_limit,status,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			c.ID, c.Name, c.Type, c.BaseURL, c.Keys, c.AuthType, c.AuthKey, c.Models, c.ModelMapping, c.Group, c.Priority, c.Weight, c.RateLimit, c.Status, db.TimeToStr(c.CreatedAt), db.TimeToStr(c.UpdatedAt)); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func migrateChannelsFromJSON() (bool, error) {
+	path := filepath.Join(dataDir, "channels.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var cs []Channel
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &cs); err != nil {
+			return false, err
+		}
+	}
+	if err := saveChannelsToDB(cs); err != nil {
+		return false, err
+	}
+	db.RenameJSONToBak(dataDir, "channels.json")
+	return true, nil
 }
 
 // GetAllChannels 返回所有启用的渠道

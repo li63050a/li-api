@@ -5,7 +5,7 @@
 - **纯 Go 实现**，无 CGO，交叉编译零依赖
 - **极小体积**：编译产物仅约 3MB（new-api 动辄数十 MB）
 - **极低内存**：常驻内存约 10MB 级别，无外部数据库进程
-- **单文件运行**：一个二进制 + 一份 `data/routes.json` 即可工作
+- **单文件运行**：一个二进制 + 一份 SQLite 数据文件（`data/gateway.db`）即可工作
 - 支持反向代理、上游认证注入、限流、路径白名单、SSE 流式转发
 
 > 定位：把多个上游（OpenAI / Anthropic / 自建服务等）聚合为一个统一入口，
@@ -39,9 +39,17 @@
 | 旧版前缀代理 | `/proxy/*` 仍可用，按路径前缀转发（兼容老用法） |
 | 流式转发 | 支持 SSE / 流式响应（LLM 对话必备），边收边发 |
 | 访问日志 | 每次转发写入 `access.log`（JSONL：状态码/耗时/消耗/尝试次数） |
-| 全局设置 | `/api/setting` 管理运营模式 / 开放注册 / 模型倍率，持久化到 `config.json` |
+| 全局设置 | `/api/setting` 管理运营模式 / 开放注册 / 模型倍率，持久化到 SQLite |
 | 管理后台 | 内置静态页面，可视化增删改 渠道 / 令牌 / 路由 / 设置 |
-| 配置持久化 | `config.json` / `channels.json` / `tokens.json` / `routes.json`，热更新内存缓存 |
+| 配置持久化 | 关系型存储：`data/gateway.db`（SQLite，纯 Go 无 CGO），启动时载入内存，CRUD 落盘 |
+| 双因素认证 2FA | TOTP（Google Authenticator），登录先验密码再验动态码 |
+| 邮箱 / 找回密码 | SMTP 验证码绑定邮箱，忘记密码邮件重置 |
+| 第三方 OAuth | GitHub / Google 一键登录（自动建号） |
+| 通知 | 渠道自动禁用等事件推送到 Webhook / Telegram / 钉钉 / 飞书 / 邮件 |
+| 安全守卫 | IP 白名单 / 黑名单（CIDR）+ 每 IP 每分钟限流 |
+| 用量统计 | `/api/stats` 聚合看板（请求数 / 消耗 / 按模型 / 按用户 / 状态码）+ CSV 导出 |
+| 模型别名 | `alias.*` 把公开名映射到真实模型，`/v1/models` 自动列出，转发时自动解析 |
+| 容器部署 | 附带 Dockerfile / docker-compose.yml |
 
 ---
 
@@ -51,7 +59,8 @@
 # 编译（推荐加裁剪参数，进一步缩小体积）
 go build -ldflags="-s -w" -o gateway .
 
-# 首次运行会自动在 ./data 下生成 config.json 与各类数据文件；
+# 首次运行会自动在 ./data 下生成 config.json 与 SQLite 数据库（gateway.db）；
+# 旧版本遗留的各类 *.json 数据文件会在首次启动时自动迁移进 SQLite，并重命名为 *.json.bak；
 # 可用 -gen-config 强制生成一份带注释的示例配置：
 ./gateway -gen-config
 

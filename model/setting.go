@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"api-gateway/db"
 )
 
 // Setting 全局设置（仿 new-api：自用 / 营业）
@@ -28,24 +30,95 @@ var (
 
 // InitSettings 加载设置，不存在则写入默认值
 func InitSettings() error {
-	path := filepath.Join(dataDir, "setting.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return saveSettings()
-		}
-		return err
-	}
-	if len(data) == 0 {
-		return saveSettings()
-	}
 	settingMu.Lock()
 	defer settingMu.Unlock()
-	if err := json.Unmarshal(data, &setting); err != nil {
-		return err
+
+	row := db.DB.QueryRow(
+		"SELECT id, mode, open_register, model_ratio, completion_ratio, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, notify_email FROM settings WHERE id = 1",
+	)
+	var (
+		id                int
+		mode              string
+		openRegister      int
+		modelRatio        string
+		completionRatio   string
+		smtpHost          string
+		smtpPort          int
+		smtpUser          string
+		smtpPass          string
+		smtpFrom          string
+		notifyEmail       string
+	)
+	err := row.Scan(&id, &mode, &openRegister, &modelRatio, &completionRatio, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &notifyEmail)
+	if err != nil {
+		path := filepath.Join(dataDir, "setting.json")
+		if _, ferr := os.Stat(path); ferr == nil {
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return rerr
+			}
+			if len(data) > 0 {
+				if uerr := json.Unmarshal(data, &setting); uerr != nil {
+					return uerr
+				}
+			}
+			mr, merr := json.Marshal(setting.ModelRatio)
+			if merr != nil {
+				return merr
+			}
+			cr, cerr := json.Marshal(setting.CompletionRatio)
+			if cerr != nil {
+				return cerr
+			}
+			if _, ierr := db.DB.Exec(
+				"INSERT INTO settings (id, mode, open_register, model_ratio, completion_ratio, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, notify_email) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				setting.Mode, boolToInt(setting.OpenRegister), string(mr), string(cr), setting.SMTPHost, setting.SMTPPort, setting.SMTPUser, setting.SMTPPass, setting.SMTPFrom, setting.NotifyEmail,
+			); ierr != nil {
+				return ierr
+			}
+			db.RenameJSONToBak(dataDir, "setting.json")
+			if setting.ModelRatio == nil {
+				setting.ModelRatio = map[string]float64{}
+			}
+			if setting.CompletionRatio == nil {
+				setting.CompletionRatio = map[string]float64{}
+			}
+			return nil
+		}
+		// no row and no file: defaults
+		setting = Setting{Mode: "self", OpenRegister: true, ModelRatio: map[string]float64{}, CompletionRatio: map[string]float64{}}
+		if _, derr := db.DB.Exec(
+			"INSERT INTO settings (id, mode, open_register, model_ratio, completion_ratio, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, notify_email) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			setting.Mode, boolToInt(setting.OpenRegister), "{}", "{}", setting.SMTPHost, setting.SMTPPort, setting.SMTPUser, setting.SMTPPass, setting.SMTPFrom, setting.NotifyEmail,
+		); derr != nil {
+			return derr
+		}
+		return nil
+	}
+
+	setting = Setting{
+		Mode:            mode,
+		OpenRegister:    openRegister != 0,
+		ModelRatio:      map[string]float64{},
+		CompletionRatio: map[string]float64{},
+		SMTPHost:        smtpHost,
+		SMTPPort:        smtpPort,
+		SMTPUser:        smtpUser,
+		SMTPPass:        smtpPass,
+		SMTPFrom:        smtpFrom,
+		NotifyEmail:     notifyEmail,
+	}
+	if modelRatio != "" {
+		_ = json.Unmarshal([]byte(modelRatio), &setting.ModelRatio)
+	}
+	if completionRatio != "" {
+		_ = json.Unmarshal([]byte(completionRatio), &setting.CompletionRatio)
 	}
 	if setting.ModelRatio == nil {
 		setting.ModelRatio = map[string]float64{}
+	}
+	if setting.CompletionRatio == nil {
+		setting.CompletionRatio = map[string]float64{}
 	}
 	return nil
 }
@@ -53,16 +126,22 @@ func InitSettings() error {
 func saveSettings() error {
 	settingMu.RLock()
 	defer settingMu.RUnlock()
-	path := filepath.Join(dataDir, "setting.json")
-	data, err := json.MarshalIndent(setting, "", "  ")
+	mr, err := json.Marshal(setting.ModelRatio)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	cr, err := json.Marshal(setting.CompletionRatio)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if _, err := db.DB.Exec("DELETE FROM settings WHERE id = 1"); err != nil {
+		return err
+	}
+	_, err = db.DB.Exec(
+		"INSERT INTO settings (id, mode, open_register, model_ratio, completion_ratio, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, notify_email) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		setting.Mode, boolToInt(setting.OpenRegister), string(mr), string(cr), setting.SMTPHost, setting.SMTPPort, setting.SMTPUser, setting.SMTPPass, setting.SMTPFrom, setting.NotifyEmail,
+	)
+	return err
 }
 
 // GetSetting 返回当前设置副本

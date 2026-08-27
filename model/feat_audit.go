@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
-// AuditEntry 审计日志条目（JSONL 存储，audit.json 每行一个 JSON）
+// AuditEntry 审计日志条目（SQLite 存储）
 type AuditEntry struct {
 	Time   string `json:"time"`
 	Actor  string `json:"actor"`
@@ -18,101 +21,78 @@ type AuditEntry struct {
 }
 
 var (
-	auditMu   sync.RWMutex
-	auditOnce sync.Once
+	auditMu           sync.RWMutex
+	auditMigrateOnce sync.Once
 )
-
-func auditPath() string {
-	return filepath.Join(DataDir(), "audit.json")
-}
 
 // AppendAudit 追加一行审计日志；Time 使用 RFC3339 格式。
 func AppendAudit(actor, action, detail string) error {
-	auditOnce.Do(func() {})
 	auditMu.Lock()
 	defer auditMu.Unlock()
-
-	entry := AuditEntry{
-		Time:   time.Now().Format(time.RFC3339),
-		Actor:  actor,
-		Action: action,
-		Detail: detail,
-	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(auditPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	return nil
+	auditMigrateOnce.Do(func() { migrateAuditJSON() })
+	_, err := db.DB.Exec(`INSERT INTO audits(time,actor,action,detail) VALUES(?,?,?,?)`,
+		time.Now().Format(time.RFC3339), actor, action, detail)
+	return err
 }
 
 // LoadAudits 读取全部审计日志，返回最近 500 条（倒序，最新在前）。
-// 解析失败的行会被跳过；文件不存在时返回空切片。
 func LoadAudits() []AuditEntry {
 	auditMu.RLock()
 	defer auditMu.RUnlock()
+	auditMigrateOnce.Do(func() { migrateAuditJSON() })
 
-	f, err := os.Open(auditPath())
+	rows, err := db.DB.Query(`SELECT id,time,actor,action,detail FROM audits ORDER BY id DESC`)
 	if err != nil {
 		return []AuditEntry{}
 	}
-	defer f.Close()
-
+	defer rows.Close()
 	var all []AuditEntry
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
-	for sc.Scan() {
-		line := trimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
+	for rows.Next() {
 		var e AuditEntry
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
+		var id int
+		if err := rows.Scan(&id, &e.Time, &e.Actor, &e.Action, &e.Detail); err != nil {
 			continue
 		}
 		all = append(all, e)
 	}
-
-	// 倒序：最新在前
-	for i, j := 0, len(all)-1; i < j; i, j = i+1, j-1 {
-		all[i], all[j] = all[j], all[i]
-	}
-
 	if len(all) > 500 {
 		all = all[:500]
 	}
 	return all
 }
 
-// ClearAudits 清空审计日志（写入空文件）。
+// ClearAudits 清空审计日志
 func ClearAudits() error {
 	auditMu.Lock()
 	defer auditMu.Unlock()
-
-	f, err := os.OpenFile(auditPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	return f.Close()
+	_, err := db.DB.Exec("DELETE FROM audits")
+	return err
 }
 
-func trimSpace(s string) string {
-	start := 0
-	for start < len(s) && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n') {
-		start++
+// migrateAuditJSON 首次启动时把旧的 audit.json(JSONL) 迁移进 SQLite
+func migrateAuditJSON() {
+	empty, err := db.IsEmpty("audits")
+	if err != nil || !empty {
+		return
 	}
-	end := len(s)
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\r' || s[end-1] == '\n') {
-		end--
+	path := filepath.Join(DataDir(), "audit.json")
+	f, err := os.Open(path)
+	if err != nil {
+		return
 	}
-	return s[start:end]
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var e AuditEntry
+		if json.Unmarshal([]byte(line), &e) != nil {
+			continue
+		}
+		_, _ = db.DB.Exec(`INSERT INTO audits(time,actor,action,detail) VALUES(?,?,?,?)`, e.Time, e.Actor, e.Action, e.Detail)
+	}
+	db.RenameJSONToBak(DataDir(), "audit.json")
 }

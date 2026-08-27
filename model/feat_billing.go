@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
 // BillingEntry 一条额度/账单变动记录
@@ -21,77 +23,74 @@ type BillingEntry struct {
 }
 
 var (
-	billingMu      sync.RWMutex
-	billingLoaded  bool
+	billingMu          sync.RWMutex
+	billingMigrateOnce sync.Once
 )
 
-func billingPath() string {
-	return filepath.Join(DataDir(), "billing.json")
-}
-
-// AppendBilling 追加一条账单记录（JSONL，懒初始化）
+// AppendBilling 追加一条账单记录（SQLite）
 func AppendBilling(e BillingEntry) error {
 	billingMu.Lock()
 	defer billingMu.Unlock()
-
+	billingMigrateOnce.Do(func() { migrateBillingJSON() })
 	if e.Time == "" {
 		e.Time = time.Now().Format(time.RFC3339)
 	}
-
-	data, err := json.Marshal(e)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(billingPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	return nil
+	_, err := db.DB.Exec(`INSERT INTO billing(time,usr,type,amount,balance,remark) VALUES(?,?,?,?,?,?)`,
+		e.Time, e.User, e.Type, e.Amount, e.Balance, e.Remark)
+	return err
 }
 
-// LoadBillings 读取全部账单，返回最近 500 条且倒序
+// LoadBillings 读取全部账单，返回最近 500 条且倒序（最新在前）
 func LoadBillings() []BillingEntry {
 	billingMu.RLock()
 	defer billingMu.RUnlock()
+	billingMigrateOnce.Do(func() { migrateBillingJSON() })
 
-	path := billingPath()
-	f, err := os.Open(path)
+	rows, err := db.DB.Query(`SELECT id,time,usr,type,amount,balance,remark FROM billing ORDER BY id DESC`)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []BillingEntry{}
-		}
 		return []BillingEntry{}
 	}
-	defer f.Close()
-
+	defer rows.Close()
 	var entries []BillingEntry
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
+	for rows.Next() {
 		var e BillingEntry
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
+		var id int
+		if err := rows.Scan(&id, &e.Time, &e.User, &e.Type, &e.Amount, &e.Balance, &e.Remark); err != nil {
 			continue
 		}
 		entries = append(entries, e)
 	}
-
-	// 倒序
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
-	}
-
 	if len(entries) > 500 {
 		entries = entries[:500]
 	}
 	return entries
+}
+
+// migrateBillingJSON 首次启动时把旧的 billing.json(JSONL) 迁移进 SQLite
+func migrateBillingJSON() {
+	empty, err := db.IsEmpty("billing")
+	if err != nil || !empty {
+		return
+	}
+	path := filepath.Join(DataDir(), "billing.json")
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var e BillingEntry
+		if json.Unmarshal([]byte(line), &e) != nil {
+			continue
+		}
+		_, _ = db.DB.Exec(`INSERT INTO billing(time,usr,type,amount,balance,remark) VALUES(?,?,?,?,?,?)`,
+			e.Time, e.User, e.Type, e.Amount, e.Balance, e.Remark)
+	}
+	db.RenameJSONToBak(DataDir(), "billing.json")
 }

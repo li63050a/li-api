@@ -2,6 +2,7 @@ package model
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,18 +11,25 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
 // User 管理员账户（轻量实现：单文件存储，默认 root/123456）
 type User struct {
-	ID           int    `json:"id"`
-	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"` // 格式 sha256(salt+pw):salt
-	Role         string `json:"role"`          // root | user
-	Status       int    `json:"status"`        // 1 启用 0 禁用
-	Quota        int64  `json:"quota"`         // 额度（token 数），-1 表示不限
-	Used         int64  `json:"used"`          // 已消耗
-	RateLimit    int    `json:"rate_limit"`    // 每分钟请求数限制，0 不限
+	ID           int       `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"password_hash"` // 格式 sha256(salt+pw):salt
+	Role         string    `json:"role"`          // root | user
+	Status       int       `json:"status"`        // 1 启用 0 禁用
+	Quota        int64     `json:"quota"`         // 额度（token 数），-1 表示不限
+	Used         int64     `json:"used"`          // 已消耗
+	RateLimit    int       `json:"rate_limit"`    // 每分钟请求数限制，0 不限
+	Email        string    `json:"email"`
+	TwoFASecret  string    `json:"twofa_secret,omitempty"`
+	TwoFAEnabled int       `json:"twofa_enabled"` // 1 启用 TOTP 双因素
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // Session 登录会话
@@ -38,28 +46,25 @@ var (
 	sessions sync.Map // token -> *Session
 )
 
-// InitUsers 加载用户，不存在则创建默认 root/123456
+// InitUsers 从 SQLite 加载用户（首次运行自动从旧 JSON 迁移；若仍为空则创建默认 root/123456）
 func InitUsers() error {
-	path := filepath.Join(dataDir, "user.json")
-	data, err := os.ReadFile(path)
+	us, err := loadUsersFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			u := User{ID: 1, Username: "root", Role: "root", Status: 1}
-			u.PasswordHash = hashPassword("123456")
-			users = []User{u}
-			userNext = 2
-			return saveUsers()
+		return err
+	}
+	if len(us) == 0 {
+		if migrated, _ := migrateUsersFromJSON(); migrated {
+			us, _ = loadUsersFromDB()
 		}
-		return err
 	}
-	if len(data) == 0 {
-		users = []User{}
-		userNext = 1
-		return nil
+	if len(us) == 0 {
+		u := User{ID: 1, Username: "root", Role: "root", Status: 1, Quota: -1, Used: 0}
+		u.PasswordHash = hashPassword("123456")
+		users = []User{u}
+		userNext = 2
+		return saveUsers()
 	}
-	if err := json.Unmarshal(data, &users); err != nil {
-		return err
-	}
+	users = us
 	userNext = 1
 	for _, u := range users {
 		if u.ID >= userNext {
@@ -69,17 +74,84 @@ func InitUsers() error {
 	return nil
 }
 
+func loadUsersFromDB() ([]User, error) {
+	rows, err := db.DB.Query(`SELECT id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,created_at,updated_at FROM users ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		var u User
+		var created, updated sql.NullString
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.Quota, &u.Used, &u.RateLimit, &u.Email, &u.TwoFASecret, &u.TwoFAEnabled, &created, &updated); err != nil {
+			return nil, err
+		}
+		u.CreatedAt = db.StrToTime(created.String)
+		u.UpdatedAt = db.StrToTime(updated.String)
+		out = append(out, u)
+	}
+	return out, nil
+}
+
 func saveUsers() error {
-	path := filepath.Join(dataDir, "user.json")
-	data, err := json.MarshalIndent(users, "", "  ")
+	tx, err := db.DB.Begin()
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := tx.Exec("DELETE FROM users"); err != nil {
+		tx.Rollback()
 		return err
 	}
-	return os.Rename(tmp, path)
+	for _, u := range users {
+		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func migrateUsersFromJSON() (bool, error) {
+	path := filepath.Join(dataDir, "user.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var us []User
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &us); err != nil {
+			return false, err
+		}
+	}
+	if err := saveUsersToDB(us); err != nil {
+		return false, err
+	}
+	db.RenameJSONToBak(dataDir, "user.json")
+	return true, nil
+}
+
+// saveUsersToDB 把给定用户切片整表写回 SQLite（供迁移复用）
+func saveUsersToDB(us []User) error {
+	tx, err := db.DB.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM users"); err != nil {
+		tx.Rollback()
+		return err
+	}
+	for _, u := range us {
+		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func hashPassword(pw string) string {
@@ -149,6 +221,7 @@ func GetAllUsers() []User {
 	for i := range users {
 		u := users[i]
 		u.PasswordHash = ""
+		u.TwoFASecret = ""
 		cp[i] = u
 	}
 	return cp
@@ -269,6 +342,49 @@ func DeleteUser(id int) error {
 				return errors.New("不能删除 root 账户")
 			}
 			users = append(users[:i], users[i+1:]...)
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// SetUserEmail 更新用户绑定邮箱
+func SetUserEmail(username, email string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].Email = email
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// GetUser2FA 返回用户 TOTP 密钥与是否启用
+func GetUser2FA(username string) (secret string, enabled bool) {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	for i := range users {
+		if users[i].Username == username {
+			return users[i].TwoFASecret, users[i].TwoFAEnabled == 1
+		}
+	}
+	return "", false
+}
+
+// SetUser2FA 设置用户 TOTP 密钥与启用状态
+func SetUser2FA(username, secret string, enabled bool) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].TwoFASecret = secret
+			if enabled {
+				users[i].TwoFAEnabled = 1
+			} else {
+				users[i].TwoFAEnabled = 0
+			}
 			return saveUsers()
 		}
 	}

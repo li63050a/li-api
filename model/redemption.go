@@ -1,12 +1,15 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
 // Redemption 充值码（仿 new-api：管理员生成，用户兑换后获得额度）
@@ -21,42 +24,85 @@ type Redemption struct {
 }
 
 var (
-	redeemMu       sync.RWMutex
-	redemptions    []Redemption
+	redeemMu    sync.RWMutex
+	redemptions []Redemption
 )
 
-// InitRedemptions 加载充值码数据
+// InitRedemptions 从 SQLite 加载充值码（首次运行自动从旧 JSON 迁移）
 func InitRedemptions() error {
-	path := filepath.Join(dataDir, "redemptions.json")
-	data, err := os.ReadFile(path)
+	rs, err := loadRedemptionsFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			redemptions = []Redemption{}
-			return nil
+		return err
+	}
+	if len(rs) == 0 {
+		if migrated, _ := migrateRedemptionsFromJSON(); migrated {
+			rs, _ = loadRedemptionsFromDB()
 		}
-		return err
 	}
-	if len(data) == 0 {
-		redemptions = []Redemption{}
-		return nil
-	}
-	if err := json.Unmarshal(data, &redemptions); err != nil {
-		return err
-	}
+	redemptions = rs
 	return nil
 }
 
+func loadRedemptionsFromDB() ([]Redemption, error) {
+	rows, err := db.DB.Query(`SELECT code,quota,status,created_by,created_at,redeemed_by,redeemed_at FROM redemptions ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Redemption
+	for rows.Next() {
+		var r Redemption
+		var created, redeemed sql.NullString
+		if err := rows.Scan(&r.Code, &r.Quota, &r.Status, &r.CreatedBy, &created, &r.RedeemedBy, &redeemed); err != nil {
+			return nil, err
+		}
+		r.CreatedAt = db.StrToTime(created.String)
+		r.RedeemedAt = db.StrToTime(redeemed.String)
+		out = append(out, r)
+	}
+	return out, nil
+}
+
 func saveRedemptions() error {
-	path := filepath.Join(dataDir, "redemptions.json")
-	data, err := json.MarshalIndent(redemptions, "", "  ")
+	return saveRedemptionsToDB(redemptions)
+}
+
+func saveRedemptionsToDB(rs []Redemption) error {
+	tx, err := db.DB.Begin()
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := tx.Exec("DELETE FROM redemptions"); err != nil {
+		tx.Rollback()
 		return err
 	}
-	return os.Rename(tmp, path)
+	for _, r := range rs {
+		if _, err := tx.Exec(`INSERT INTO redemptions(code,quota,status,created_by,created_at,redeemed_by,redeemed_at) VALUES(?,?,?,?,?,?,?)`,
+			r.Code, r.Quota, r.Status, r.CreatedBy, db.TimeToStr(r.CreatedAt), r.RedeemedBy, db.TimeToStr(r.RedeemedAt)); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func migrateRedemptionsFromJSON() (bool, error) {
+	path := filepath.Join(dataDir, "redemptions.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var rs []Redemption
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &rs); err != nil {
+			return false, err
+		}
+	}
+	if err := saveRedemptionsToDB(rs); err != nil {
+		return false, err
+	}
+	db.RenameJSONToBak(dataDir, "redemptions.json")
+	return true, nil
 }
 
 // CreateRedemptions 批量生成充值码

@@ -2,6 +2,7 @@ package model
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"api-gateway/db"
 )
 
 // randToken 生成指定长度的随机十六进制字符串
@@ -46,26 +49,18 @@ var (
 	tokenNext int
 )
 
-// InitTokens 加载令牌数据
+// InitTokens 从 SQLite 加载令牌（首次运行自动从旧 JSON 迁移）
 func InitTokens() error {
-	path := filepath.Join(dataDir, "tokens.json")
-	data, err := os.ReadFile(path)
+	ts, err := loadTokensFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			tokens = []Token{}
-			tokenNext = 1
-			return nil
+		return err
+	}
+	if len(ts) == 0 {
+		if migrated, _ := migrateTokensFromJSON(); migrated {
+			ts, _ = loadTokensFromDB()
 		}
-		return err
 	}
-	if len(data) == 0 {
-		tokens = []Token{}
-		tokenNext = 1
-		return nil
-	}
-	if err := json.Unmarshal(data, &tokens); err != nil {
-		return err
-	}
+	tokens = ts
 	tokenNext = 1
 	for _, t := range tokens {
 		if len(t.Key) >= tokenNext {
@@ -75,17 +70,68 @@ func InitTokens() error {
 	return nil
 }
 
+func loadTokensFromDB() ([]Token, error) {
+	rows, err := db.DB.Query(`SELECT key,name,owner,grp,quota,used,unlimited,status,expired_at,models,created_at,updated_at FROM tokens ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Token
+	for rows.Next() {
+		var t Token
+		var expired, created, updated sql.NullString
+		if err := rows.Scan(&t.Key, &t.Name, &t.Owner, &t.Group, &t.Quota, &t.Used, &t.Unlimited, &t.Status, &expired, &t.Models, &created, &updated); err != nil {
+			return nil, err
+		}
+		t.ExpiredAt = db.StrToTime(expired.String)
+		t.CreatedAt = db.StrToTime(created.String)
+		t.UpdatedAt = db.StrToTime(updated.String)
+		out = append(out, t)
+	}
+	return out, nil
+}
+
 func saveTokens() error {
-	path := filepath.Join(dataDir, "tokens.json")
-	data, err := json.MarshalIndent(tokens, "", "  ")
+	return saveTokensToDB(tokens)
+}
+
+func saveTokensToDB(ts []Token) error {
+	tx, err := db.DB.Begin()
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := tx.Exec("DELETE FROM tokens"); err != nil {
+		tx.Rollback()
 		return err
 	}
-	return os.Rename(tmp, path)
+	for _, t := range ts {
+		if _, err := tx.Exec(`INSERT INTO tokens(key,name,owner,grp,quota,used,unlimited,status,expired_at,models,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+			t.Key, t.Name, t.Owner, t.Group, t.Quota, t.Used, t.Unlimited, t.Status, db.TimeToStr(t.ExpiredAt), t.Models, db.TimeToStr(t.CreatedAt), db.TimeToStr(t.UpdatedAt)); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func migrateTokensFromJSON() (bool, error) {
+	path := filepath.Join(dataDir, "tokens.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var ts []Token
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &ts); err != nil {
+			return false, err
+		}
+	}
+	if err := saveTokensToDB(ts); err != nil {
+		return false, err
+	}
+	db.RenameJSONToBak(dataDir, "tokens.json")
+	return true, nil
 }
 
 // GetAllTokens 返回所有令牌（管理后台展示）

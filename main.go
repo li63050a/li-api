@@ -15,7 +15,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（按 0.0.0.x 依次递增）
-const Version = "0.0.0.5"
+const Version = "0.0.0.6"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -94,20 +94,20 @@ func main() {
 	http.HandleFunc("/api/setting/test_email", handler.TestEmailHandler)
 
 	// 管理 API
-	http.HandleFunc("/admin/routes", handler.AdminHandler)
-	http.HandleFunc("/admin/routes/", handler.AdminHandler)
-	http.HandleFunc("/admin/tokens", handler.TokenHandler)
-	http.HandleFunc("/admin/tokens/", handler.TokenHandler)
-	http.HandleFunc("/admin/channels", handler.ChannelHandler)
-	http.HandleFunc("/admin/channels/", handler.ChannelHandler)
-	http.HandleFunc("/admin/channels/test/", handler.ChannelTestHandler)
-	http.HandleFunc("/admin/users", handler.UsersHandler)
-	http.HandleFunc("/admin/users/", handler.UsersHandler)
-	http.HandleFunc("/admin/redemptions", handler.RedemptionHandler)
-	http.HandleFunc("/admin/redemptions/", handler.RedemptionHandler)
+	http.HandleFunc("/admin/routes", handler.GuardMiddleware(handler.AdminHandler))
+	http.HandleFunc("/admin/routes/", handler.GuardMiddleware(handler.AdminHandler))
+	http.HandleFunc("/admin/tokens", handler.GuardMiddleware(handler.TokenHandler))
+	http.HandleFunc("/admin/tokens/", handler.GuardMiddleware(handler.TokenHandler))
+	http.HandleFunc("/admin/channels", handler.GuardMiddleware(handler.ChannelHandler))
+	http.HandleFunc("/admin/channels/", handler.GuardMiddleware(handler.ChannelHandler))
+	http.HandleFunc("/admin/channels/test/", handler.GuardMiddleware(handler.ChannelTestHandler))
+	http.HandleFunc("/admin/users", handler.GuardMiddleware(handler.UsersHandler))
+	http.HandleFunc("/admin/users/", handler.GuardMiddleware(handler.UsersHandler))
+	http.HandleFunc("/admin/redemptions", handler.GuardMiddleware(handler.RedemptionHandler))
+	http.HandleFunc("/admin/redemptions/", handler.GuardMiddleware(handler.RedemptionHandler))
 
-	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*）
-	http.HandleFunc("/v1/", handler.RelayHandler)
+	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*，挂安全守卫）
+	http.HandleFunc("/v1/", handler.GuardMiddleware(handler.RelayHandler))
 
 	// 启动服务
 	listen := os.Getenv("LISTEN")
