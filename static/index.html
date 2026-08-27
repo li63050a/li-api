@@ -95,7 +95,7 @@
                 <button class="btn btn-success" onclick="addChannel()">添加</button>
                 <button class="btn btn-primary" onclick="loadChannels()">刷新</button>
             </div>
-            <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead>
+            <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
                 <tbody id="channelTable"></tbody></table>
         </div>
 
@@ -105,10 +105,12 @@
                 <input id="tGroup" placeholder="分组" value="default" />
                 <input id="tQuota" type="number" placeholder="额度(token数, -1 不限)" value="-1" />
                 <label><input type="checkbox" id="tUnlimited" /> 不限</label>
+                <input id="tExpiredAt" type="datetime-local" placeholder="过期时间(留空=永不过期)" />
+                <input id="tModels" placeholder="允许模型(逗号分隔,留空=全部)" />
                 <button class="btn btn-success" onclick="addToken()">生成令牌</button>
                 <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
             </div>
-            <table><thead><tr><th>Key</th><th>名称</th><th>分组</th><th>已用/额度</th><th>状态</th><th>操作</th></tr></thead>
+            <table><thead><tr><th>Key</th><th>名称</th><th>分组</th><th>模型</th><th>已用/额度</th><th>过期</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tokenTable"></tbody></table>
         </div>
 
@@ -118,8 +120,12 @@
                 <label><input type="checkbox" id="sOpenReg" /> 允许公开注册</label>
             </div>
             <div class="form-group">
-                <span>模型倍率(JSON，营业计费用):</span>
+                <span>模型倍率(JSON，营业模式 prompt 计费用):</span>
                 <input id="sRatio" style="flex-basis:100%" placeholder='{"gpt-4o":1,"claude":2}' />
+            </div>
+            <div class="form-group">
+                <span>生成倍率(JSON，营业模式 completion 计费用):</span>
+                <input id="sCompRatio" style="flex-basis:100%" placeholder='{"gpt-4o":2,"claude":3}' />
             </div>
             <button class="btn btn-success" onclick="saveSetting()">保存设置</button>
             <button class="btn btn-primary" onclick="loadSetting()">刷新</button>
@@ -190,7 +196,11 @@
         document.getElementById('channelTable').innerHTML = cs.map(c=>`<tr><td>${c.id}</td><td>${c.name}</td><td>${c.type}</td><td>${c.base_url}</td>
             <td>${c.models}</td><td>${c.group}</td><td>${c.priority}</td>
             <td><span class="status ${c.status?'status-on':'status-off'}">${c.status?'启用':'禁用'}</span></td>
+            <td><button class="btn btn-primary" onclick="testChannel(${c.id})">测试</button></td>
             <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join(''); }
+    async function testChannel(id){ try{ const res=await api('/admin/channels/test/'+id,{method:'POST'}); const d=await res.json();
+        alert('状态码: '+d.status+'\n结果: '+(d.success?'成功 ✓':'失败 ✗')+'\n'+(d.message||'')); }
+        catch(e){ alert('测试请求出错: '+e); } }
     async function addChannel(){ const data={name:v('cName'),type:v('cType'),base_url:v('cBaseURL'),keys:v('cKeys'),
         auth_type:v('cAuthType'),auth_key:v('cAuthKey'),models:v('cModels'),model_mapping:v('cModelMap'),group:v('cGroup'),
         priority:parseInt(v('cPriority'))||0,weight:parseInt(v('cWeight'))||1,rate_limit:parseInt(v('cRateLimit'))||0,
@@ -200,21 +210,26 @@
 
     async function loadTokens(){ const res=await api('/admin/tokens'); const ts=await res.json();
         document.getElementById('tokenTable').innerHTML = ts.map(t=>`<tr><td><code>${t.key}</code></td><td>${t.name||'-'}</td><td>${t.group||'default'}</td>
+            <td>${t.models||'全部'}</td>
             <td>${t.used} / ${t.unlimited?'不限':(t.quota<0?'不限':t.quota)}</td>
+            <td>${t.expired_at?t.expired_at:'永久'}</td>
             <td><span class="status ${t.status?'status-on':'status-off'}">${t.status?'启用':'禁用'}</span></td>
             <td><button class="btn btn-danger" onclick="deleteToken('${t.key}')">删除</button></td></tr>`).join(''); }
-    async function addToken(){ const data={name:v('tName'),group:v('tGroup'),
-        quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0};
+    async function addToken(){ const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
+        quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
+        expired_at:exp?new Date(exp).toISOString():null, models:v('tModels')};
         const res=await api('/admin/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-        const t=await res.json(); alert('已生成令牌：\n'+t.key); loadTokens(); document.getElementById('tName').value=''; }
+        const t=await res.json(); alert('已生成令牌：\n'+t.key); loadTokens(); document.getElementById('tName').value=''; document.getElementById('tModels').value=''; document.getElementById('tExpiredAt').value=''; }
     async function deleteToken(key){ if(!confirm('确认删除该令牌？'))return; await api('/admin/tokens/'+key,{method:'DELETE'}); loadTokens(); }
 
     async function loadSetting(){ const res=await api('/api/setting'); if(!res.ok)return; const s=await res.json();
         document.getElementById('sMode').value=s.mode; document.getElementById('sOpenReg').checked=s.open_register;
-        document.getElementById('sRatio').value=JSON.stringify(s.model_ratio||{}); }
+        document.getElementById('sRatio').value=JSON.stringify(s.model_ratio||{});
+        document.getElementById('sCompRatio').value=JSON.stringify(s.completion_ratio||{}); }
     async function saveSetting(){ const data={mode:document.getElementById('sMode').value,
         open_register:document.getElementById('sOpenReg').checked,
-        model_ratio:JSON.parse(document.getElementById('sRatio').value||'{}')};
+        model_ratio:JSON.parse(document.getElementById('sRatio').value||'{}'),
+        completion_ratio:JSON.parse(document.getElementById('sCompRatio').value||'{}')};
         await api('/api/setting',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); alert('已保存'); }
 </script>
 </body>

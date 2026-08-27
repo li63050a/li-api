@@ -73,6 +73,10 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid API Key", http.StatusUnauthorized)
 		return
 	}
+	if tok.IsExpired() {
+		http.Error(w, "Token Expired", http.StatusForbidden)
+		return
+	}
 	if tok.Unlimited == 0 && tok.Quota >= 0 && tok.Used >= tok.Quota {
 		http.Error(w, "Quota Exceeded", http.StatusForbidden)
 		return
@@ -108,6 +112,12 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 令牌级模型白名单校验
+	if !model.TokenModelAllowed(tok.Models, modelName) {
+		http.Error(w, "Model not allowed for this token", http.StatusForbidden)
+		return
+	}
+
 	targets := buildTargets(group, modelName)
 	if len(targets) == 0 {
 		http.Error(w, "No available channel for model: "+modelName, http.StatusBadGateway)
@@ -137,7 +147,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 			markChannelFailure(t.channel.ID)
 		}
 		cost := maxInt64(1, cw.bytes/4)
-		cost = model.ModelCost(modelName, cost)
+		cost = model.ModelCost(modelName, cost, 0)
 		_ = model.UseToken(key, cost)
 		logAccess(map[string]interface{}{
 			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
@@ -189,12 +199,18 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(respStatus)
 	_, _ = w.Write(respBody)
 
-	// 计费：优先用响应中的 usage.total_tokens，否则按字节估算；再按模式/倍率换算
-	cost := parseUsage(respBody)
-	if cost <= 0 {
-		cost = maxInt64(1, int64(len(respBody))/4)
+	// 计费：按 usage 中的 prompt/completion 分别乘以倍率（营业模式）；
+	// 若上游仅给出 total_tokens，则整体按提示词计费
+	prompt, comp := parseUsageParts(respBody)
+	if prompt == 0 && comp == 0 {
+		if total := parseUsage(respBody); total > 0 {
+			prompt = total
+		}
 	}
-	cost = model.ModelCost(modelName, cost)
+	if prompt == 0 && comp == 0 {
+		prompt = maxInt64(1, int64(len(respBody))/4)
+	}
+	cost := model.ModelCost(modelName, prompt, comp)
 	_ = model.UseToken(key, cost)
 
 	logAccess(map[string]interface{}{

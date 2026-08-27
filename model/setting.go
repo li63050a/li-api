@@ -9,14 +9,15 @@ import (
 
 // Setting 全局设置（仿 new-api：自用 / 营业）
 type Setting struct {
-	Mode          string             `json:"mode"`            // self 自用 | biz 营业
-	OpenRegister  bool               `json:"open_register"`   // 是否允许公开注册
-	ModelRatio    map[string]float64 `json:"model_ratio"`     // 模型倍率（营业模式下计费用）
+	Mode             string             `json:"mode"`               // self 自用 | biz 营业
+	OpenRegister     bool               `json:"open_register"`      // 是否允许公开注册
+	ModelRatio       map[string]float64 `json:"model_ratio"`        // 提示词倍率（营业计费用）
+	CompletionRatio  map[string]float64 `json:"completion_ratio"`   // 补全词倍率（营业计费用，缺省时取 ModelRatio）
 }
 
 var (
 	settingMu sync.RWMutex
-	setting   = Setting{Mode: "self", OpenRegister: true, ModelRatio: map[string]float64{}}
+	setting   = Setting{Mode: "self", OpenRegister: true, ModelRatio: map[string]float64{}, CompletionRatio: map[string]float64{}}
 )
 
 // InitSettings 加载设置，不存在则写入默认值
@@ -66,6 +67,9 @@ func GetSetting() Setting {
 	if s.ModelRatio == nil {
 		s.ModelRatio = map[string]float64{}
 	}
+	if s.CompletionRatio == nil {
+		s.CompletionRatio = map[string]float64{}
+	}
 	return s
 }
 
@@ -79,6 +83,9 @@ func UpdateSetting(patch Setting) Setting {
 	if patch.ModelRatio != nil {
 		setting.ModelRatio = patch.ModelRatio
 	}
+	if patch.CompletionRatio != nil {
+		setting.CompletionRatio = patch.CompletionRatio
+	}
 	settingMu.Unlock()
 	_ = saveSettings()
 	settingMu.RLock()
@@ -87,15 +94,20 @@ func UpdateSetting(patch Setting) Setting {
 	return s
 }
 
-// ModelCost 计算某模型消耗（按营业倍率），tokens 为原始 token 数
-func ModelCost(modelName string, tokens int64) int64 {
+// ModelCost 计算某模型消耗（营业模式）：提示词 × ModelRatio + 补全词 × CompletionRatio
+// 非营业模式直接返回原始 token 数之和
+func ModelCost(modelName string, prompt, completion int64) int64 {
 	s := GetSetting()
 	if s.Mode != "biz" {
-		return tokens
+		return prompt + completion
 	}
-	ratio := s.ModelRatio[modelName]
-	if ratio <= 0 {
-		ratio = 1
+	r := s.ModelRatio[modelName]
+	if r <= 0 {
+		r = 1
 	}
-	return int64(float64(tokens) * ratio)
+	cr := s.CompletionRatio[modelName]
+	if cr <= 0 {
+		cr = r
+	}
+	return int64(float64(prompt)*r + float64(completion)*cr)
 }

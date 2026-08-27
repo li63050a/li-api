@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,16 +26,18 @@ var ErrQuotaExceeded = errors.New("quota exceeded")
 
 // Token 代表一个面向用户的访问令牌（仿 new-api：令牌按分组关联渠道，按额度计费）
 type Token struct {
-	Key       string    `json:"key"`
-	Name      string    `json:"name"`
-	Owner     string    `json:"owner"`      // 创建者用户名（root 可见全部）
-	Group     string    `json:"group"`      // 分组，与渠道的分组对应
-	Quota     int64     `json:"quota"`      // 额度（token 单位），-1 表示不限制
-	Used      int64     `json:"used"`
-	Unlimited int       `json:"unlimited"`  // 1 表示不限额度
-	Status    int       `json:"status"`     // 1 启用，0 禁用
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Key        string    `json:"key"`
+	Name       string    `json:"name"`
+	Owner      string    `json:"owner"`       // 创建者用户名（root 可见全部）
+	Group      string    `json:"group"`       // 分组，与渠道的分组对应
+	Quota      int64     `json:"quota"`       // 额度（token 单位），-1 表示不限制
+	Used       int64     `json:"used"`
+	Unlimited  int       `json:"unlimited"`   // 1 表示不限额度
+	Status     int       `json:"status"`      // 1 启用，0 禁用
+	ExpiredAt  time.Time `json:"expired_at"`  // 过期时间，零值表示永不过期
+	Models     string    `json:"models"`      // 允许使用的模型（逗号分隔），空表示全部
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 var (
@@ -133,6 +136,8 @@ func UpdateToken(key string, t *Token) error {
 			tokens[i].Quota = t.Quota
 			tokens[i].Unlimited = t.Unlimited
 			tokens[i].Status = t.Status
+			tokens[i].ExpiredAt = t.ExpiredAt
+			tokens[i].Models = t.Models
 			return saveTokens()
 		}
 	}
@@ -150,6 +155,24 @@ func GetToken(key string) (*Token, error) {
 		}
 	}
 	return nil, ErrTokenInvalid
+}
+
+// IsExpired 令牌是否已过期（零值 ExpiredAt 表示永不过期）
+func (t *Token) IsExpired() bool {
+	return !t.ExpiredAt.IsZero() && t.ExpiredAt.Before(time.Now())
+}
+
+// TokenModelAllowed 判断令牌是否允许使用指定模型（空列表表示全部允许）
+func TokenModelAllowed(models, modelName string) bool {
+	if models == "" {
+		return true
+	}
+	for _, m := range strings.Split(models, ",") {
+		if strings.TrimSpace(m) == modelName {
+			return true
+		}
+	}
+	return false
 }
 
 // UseToken 校验并扣减额度（cost 为本次消耗的 token 数）
@@ -196,6 +219,9 @@ func CheckAndUse(key string) error {
 	for i := range tokens {
 		if tokens[i].Key == key {
 			if tokens[i].Status != 1 {
+				return ErrTokenInvalid
+			}
+			if tokens[i].IsExpired() {
 				return ErrTokenInvalid
 			}
 			if tokens[i].Quota >= 0 && tokens[i].Used >= tokens[i].Quota {

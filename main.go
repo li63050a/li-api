@@ -14,7 +14,11 @@ import (
 //go:embed static
 var staticFS embed.FS
 
+// Version 当前版本号（提交时递增）
+const Version = "v1.4.0"
+
 func main() {
+	log.Println("api-gateway", Version, "starting ...")
 	// 解析命令行参数
 	configPath := "config.json"
 	args := os.Args[1:]
@@ -88,6 +92,7 @@ func main() {
 	http.HandleFunc("/admin/tokens/", handler.TokenHandler)
 	http.HandleFunc("/admin/channels", handler.ChannelHandler)
 	http.HandleFunc("/admin/channels/", handler.ChannelHandler)
+	http.HandleFunc("/admin/channels/test/", handler.ChannelTestHandler)
 
 	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*）
 	http.HandleFunc("/v1/", handler.RelayHandler)

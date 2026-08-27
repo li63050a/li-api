@@ -103,6 +103,18 @@ func GetAllChannelsRaw() ([]Channel, error) {
 	return out, nil
 }
 
+// GetChannel 按 id 获取单个渠道
+func GetChannel(id int) (Channel, bool) {
+	chanMu.RLock()
+	defer chanMu.RUnlock()
+	for _, c := range channels {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return Channel{}, false
+}
+
 // InsertChannel 新增渠道
 func InsertChannel(c *Channel) (int64, error) {
 	chanMu.Lock()

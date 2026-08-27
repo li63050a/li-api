@@ -58,6 +58,21 @@ func parseUsage(body []byte) int64 {
 	return r.Usage.PromptTokens + r.Usage.CompletionTokens
 }
 
+// parseUsageParts 分别解析 prompt / completion 的 token 数（用于分倍率计费）
+func parseUsageParts(body []byte) (prompt, completion int64) {
+	var r struct {
+		Usage struct {
+			TotalTokens      int64 `json:"total_tokens"`
+			PromptTokens     int64 `json:"prompt_tokens"`
+			CompletionTokens int64 `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return 0, 0
+	}
+	return r.Usage.PromptTokens, r.Usage.CompletionTokens
+}
+
 func randInt(n int) int {
 	if n <= 0 {
 		return 0
