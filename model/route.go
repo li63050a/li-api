@@ -13,6 +13,11 @@ import (
 // ErrNotFound 表示路由不存在
 var ErrNotFound = errors.New("route not found")
 
+// DataDir 返回当前数据存储目录
+func DataDir() string {
+	return dataDir
+}
+
 // Keys 返回该路由的上游密钥列表（优先 AuthValues，其次 AuthValue）
 func (r *Route) Keys() []string {
 	if r.AuthValues != "" {

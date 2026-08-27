@@ -4,9 +4,12 @@ import (
 	"api-gateway/cache"
 	"api-gateway/model"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,6 +31,57 @@ var limiterMu sync.RWMutex
 
 // 每个路由的上游密钥轮询计数器
 var keyCounters sync.Map // map[int]*uint64
+
+// 访问日志（JSONL，写入 data/access.log）
+var (
+	logMu sync.Mutex
+	logF  *os.File
+)
+
+// statusRecorder 记录响应状态码，同时透传 Flush 以支持流式
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (s *statusRecorder) WriteHeader(c int) {
+	if !s.wrote {
+		s.status = c
+		s.wrote = true
+	}
+	s.ResponseWriter.WriteHeader(c)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	if !s.wrote {
+		s.status = http.StatusOK
+		s.wrote = true
+	}
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// logAccess 追加一条访问日志到 data/access.log
+func logAccess(entry map[string]interface{}) {
+	logMu.Lock()
+	defer logMu.Unlock()
+	if logF == nil {
+		f, err := os.OpenFile(filepath.Join(model.DataDir(), "access.log"),
+			os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return
+		}
+		logF = f
+	}
+	b, _ := json.Marshal(entry)
+	_, _ = logF.Write(append(b, '\n'))
+}
 
 // ProxyHandler 处理所有 /proxy/ 前缀的请求
 func ProxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -104,21 +158,24 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	var attempt int
+	rw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+	start := time.Now()
+
+	var tries int
 	var serve func(curKey string)
 	serve = func(curKey string) {
+		tries++
 		proxy := buildProxy(route, curKey, targetPath, r)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			// 上游连接失败且仍有备用密钥时，自动故障转移到下一个
-			attempt++
-			if len(keys) > 1 && attempt < len(keys) {
-				next := keys[(startIdx+attempt)%len(keys)]
+			if len(keys) > 1 && tries < len(keys) {
+				next := keys[(startIdx+tries)%len(keys)]
 				serve(next)
 				return
 			}
 			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
 		}
-		proxy.ServeHTTP(w, r.WithContext(ctx))
+		proxy.ServeHTTP(rw, r.WithContext(ctx))
 	}
 
 	first := ""
@@ -126,6 +183,26 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		first = keys[startIdx%len(keys)]
 	}
 	serve(first)
+
+	logAccess(map[string]interface{}{
+		"time":     start.Format(time.RFC3339),
+		"method":   r.Method,
+		"path":     targetPath,
+		"route":    route.Prefix,
+		"token":    maskToken(extractToken(r)),
+		"status":   rw.status,
+		"tries":    tries,
+		"upstream": route.UpstreamURL,
+		"duration": time.Since(start).Milliseconds(),
+	})
+}
+
+// maskToken 仅保留令牌前后各 4 位，便于审计又不泄露完整密钥
+func maskToken(t string) string {
+	if len(t) <= 8 {
+		return "****"
+	}
+	return t[:4] + "****" + t[len(t)-4:]
 }
 
 // extractToken 从请求中提取用户令牌（支持 X-API-Key 或 Authorization: Bearer）
