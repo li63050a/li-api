@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 网关管理</title>
+    <style>
+        body { font-family: sans-serif; background: #f5f7fa; margin: 20px; }
+        .container { max-width: 1200px; margin: auto; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #eaeef2; }
+        th { background: #f9fafc; font-weight: 600; }
+        .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn-primary { background: #2b6cb0; color: white; }
+        .btn-danger { background: #e53e3e; color: white; }
+        .btn-success { background: #38a169; color: white; }
+        .form-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: center; }
+        .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 4px; flex: 1 1 150px; }
+        .inline { display: inline-block; }
+        .status { font-size: 12px; padding: 2px 8px; border-radius: 12px; }
+        .status-on { background: #c6f6d5; color: #22543d; }
+        .status-off { background: #fed7d7; color: #9b2c2c; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🌐 API 网关</h1>
+    <div class="form-group">
+        <input id="name" placeholder="名称" />
+        <input id="prefix" placeholder="前缀，如 /v1" />
+        <input id="upstream" placeholder="上游地址，如 https://api.openai.com" />
+        <select id="authType"><option value="none">无认证</option><option value="bearer">Bearer Token</option><option value="header">Header</option><option value="query">Query</option></select>
+        <input id="authKey" placeholder="认证键(header名)" />
+        <input id="authValue" placeholder="认证值(token)" />
+        <input id="rateLimit" type="number" placeholder="每分钟限流" value="0" />
+        <label><input type="checkbox" id="needApiKey" /> 需API Key</label>
+        <button class="btn btn-success" onclick="addRoute()">添加</button>
+        <button class="btn btn-primary" onclick="loadRoutes()">刷新列表</button>
+    </div>
+    <table>
+        <thead><tr><th>ID</th><th>名称</th><th>前缀</th><th>上游地址</th><th>认证</th><th>限流</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="routeTable"></tbody>
+    </table>
+</div>
+<script>
+    async function loadRoutes() {
+        const res = await fetch('/admin/routes');
+        const routes = await res.json();
+        const tbody = document.getElementById('routeTable');
+        tbody.innerHTML = routes.map(r => `
+            <tr>
+                <td>${r.id}</td>
+                <td>${r.name}</td>
+                <td>${r.prefix}</td>
+                <td>${r.upstream_url}</td>
+                <td>${r.auth_type} ${r.auth_key ? '('+r.auth_key+')' : ''}</td>
+                <td>${r.rate_limit || '不限'}</td>
+                <td><span class="status ${r.enable ? 'status-on' : 'status-off'}">${r.enable ? '启用' : '禁用'}</span></td>
+                <td>
+                    <button class="btn btn-primary" onclick="editRoute(${r.id})">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function addRoute() {
+        const data = {
+            name: document.getElementById('name').value,
+            prefix: document.getElementById('prefix').value,
+            upstream_url: document.getElementById('upstream').value,
+            auth_type: document.getElementById('authType').value,
+            auth_key: document.getElementById('authKey').value,
+            auth_value: document.getElementById('authValue').value,
+            rate_limit: parseInt(document.getElementById('rateLimit').value) || 0,
+            need_api_key: document.getElementById('needApiKey').checked,
+            enable: true,
+        };
+        await fetch('/admin/routes', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(data)
+        });
+        loadRoutes();
+        // 清空部分输入
+        document.getElementById('name').value = '';
+        document.getElementById('prefix').value = '';
+        document.getElementById('upstream').value = '';
+    }
+
+    async function deleteRoute(id) {
+        if (!confirm('确认删除？')) return;
+        await fetch('/admin/routes/'+id, { method: 'DELETE' });
+        loadRoutes();
+    }
+
+    // 编辑功能可使用 prompt 简单实现，也可扩展为弹窗，此处略
+    async function editRoute(id) {
+        // 获取当前数据，弹窗修改
+        const res = await fetch('/admin/routes');
+        const routes = await res.json();
+        const r = routes.find(x => x.id === id);
+        if (!r) return;
+        const newName = prompt('名称', r.name);
+        if (newName === null) return;
+        const newPrefix = prompt('前缀', r.prefix);
+        if (newPrefix === null) return;
+        // 更多字段...
+        const updated = {...r, name: newName, prefix: newPrefix};
+        await fetch('/admin/routes/'+id, {
+            method: 'PUT',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(updated)
+        });
+        loadRoutes();
+    }
+
+    loadRoutes();
+</script>
+</body>
+</html>

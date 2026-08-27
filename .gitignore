@@ -1,0 +1,13 @@
+# 编译产物（体积大，单独通过 build.sh 生成）
+dist/
+
+# 运行时数据
+data/
+*.db
+
+# 本地二进制
+gateway
+/gateway
+
+# 临时文件
+*.tmp
