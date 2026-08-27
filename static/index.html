@@ -56,7 +56,10 @@
             <button class="active" onclick="showTab('routes')">路由(旧)</button>
             <button onclick="showTab('channels')">渠道</button>
             <button onclick="showTab('tokens')">令牌</button>
+            <button id="tabDashboard" onclick="showTab('dashboard')">仪表盘</button>
             <button id="tabSetting" onclick="showTab('settings')" style="display:none">设置</button>
+            <button id="tabUsers" onclick="showTab('users')" style="display:none">用户</button>
+            <button id="tabRedemption" onclick="showTab('redemption')" style="display:none">充值码</button>
         </div>
 
         <div id="routes" class="panel active">
@@ -129,6 +132,42 @@
             </div>
             <button class="btn btn-success" onclick="saveSetting()">保存设置</button>
             <button class="btn btn-primary" onclick="loadSetting()">刷新</button>
+            <button class="btn btn-dark" onclick="loadPresets()">加载预设价格</button>
+        </div>
+
+        <div id="dashboard" class="panel">
+            <div id="dashCards" style="display:flex;flex-wrap:wrap;gap:12px"></div>
+            <p style="color:#718096;font-size:13px" id="dashFoot"></p>
+        </div>
+
+        <div id="users" class="panel">
+            <div class="form-group">
+                <input id="uName" placeholder="用户名" />
+                <input id="uPwd" type="password" placeholder="密码" />
+                <select id="uRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
+                <input id="uQuota" type="number" placeholder="额度(token, -1 不限)" value="-1" />
+                <button class="btn btn-success" onclick="addUser()">创建用户</button>
+                <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
+            </div>
+            <table><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>已用/额度</th><th>操作</th></tr></thead>
+                <tbody id="userTable"></tbody></table>
+        </div>
+
+        <div id="redemption" class="panel">
+            <div class="form-group">
+                <input id="rQuota" type="number" placeholder="每张额度" value="100000" />
+                <input id="rCount" type="number" placeholder="生成数量" value="1" />
+                <button class="btn btn-success" onclick="createRedemptions()">生成充值码</button>
+                <button class="btn btn-primary" onclick="loadRedemptions()">刷新</button>
+            </div>
+            <div id="rCodes" style="margin:8px 0;color:#22543d"></div>
+            <table><thead><tr><th>充值码</th><th>额度</th><th>状态</th><th>生成者</th><th>兑换者</th></tr></thead>
+                <tbody id="redemptionTable"></tbody></table>
+            <hr/>
+            <div class="form-group">
+                <input id="redeemCode" placeholder="输入充值码兑换额度" />
+                <button class="btn btn-dark" onclick="redeemCode()">兑换</button>
+            </div>
         </div>
     </div>
 </div>
@@ -166,7 +205,8 @@
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='block';
         document.getElementById('who').textContent = '当前用户：'+d.username + (d.role==='root'?'（管理员）':'');
-        if(d.role==='root') document.getElementById('tabSetting').style.display='';
+        if(d.role==='root'){ document.getElementById('tabSetting').style.display=''; document.getElementById('tabUsers').style.display=''; document.getElementById('tabRedemption').style.display=''; }
+        document.getElementById('tabDashboard').style.display='';
         loadRoutes();
     }
     if(getToken()) enterApp();
@@ -178,6 +218,8 @@
         document.getElementById(id).classList.add('active');
         if(id==='routes') loadRoutes(); else if(id==='channels') loadChannels();
         else if(id==='tokens') loadTokens(); else if(id==='settings') loadSetting();
+        else if(id==='dashboard') loadDashboard(); else if(id==='users') loadUsers();
+        else if(id==='redemption') loadRedemptions();
     }
 
     async function loadRoutes(){ const res=await api('/admin/routes'); const rs=await res.json();
@@ -231,6 +273,40 @@
         model_ratio:JSON.parse(document.getElementById('sRatio').value||'{}'),
         completion_ratio:JSON.parse(document.getElementById('sCompRatio').value||'{}')};
         await api('/api/setting',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); alert('已保存'); }
+
+    async function loadDashboard(){ const res=await api('/api/dashboard'); if(!res.ok)return; const d=await res.json();
+        const cards=[['今日请求',d.today_requests],['今日 Token',d.today_tokens],['渠道总数',d.channels_total],
+            ['启用渠道',d.channels_enabled],['自动禁用',d.channels_auto_disabled],['用户总数',d.users_total]];
+        document.getElementById('dashCards').innerHTML=canvas(cards);
+        document.getElementById('dashFoot').textContent='统计日期：'+(d.date||'-')+(d.is_root?'（管理员视图）':''); }
+    function canvas(cards){ return cards.map(c=>`<div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;min-width:120px"><div style="font-size:24px;font-weight:700;color:#2b6cb0">${c[1]}</div><div style="color:#718096;font-size:13px">${c[0]}</div></div>`).join(''); }
+
+    async function loadUsers(){ const res=await api('/admin/users'); if(!res.ok)return; const us=await res.json();
+        document.getElementById('userTable').innerHTML=us.map(u=>`<tr><td>${u.id}</td><td>${u.username}</td><td>${u.role}</td>
+            <td><span class="status ${u.status?'status-on':'status-off'}">${u.status?'启用':'禁用'}</span></td>
+            <td>${u.used} / ${u.quota<0?'不限':u.quota}</td>
+            <td><button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button>
+            <button class="btn btn-primary" onclick="toggleUser(${u.id},${u.status?0:1})">${u.status?'禁用':'启用'}</button></td></tr>`).join(''); }
+    async function addUser(){ const data={username:v('uName'),password:v('uPwd'),role:v('uRole'),quota:parseInt(v('uQuota'))||-1};
+        const res=await api('/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        if(!res.ok){ alert('创建失败：'+(await res.text())); return; } loadUsers(); ['uName','uPwd'].forEach(i=>document.getElementById(i).value=''); }
+    async function deleteUser(id){ if(!confirm('确认删除该用户？'))return; await api('/admin/users/'+id,{method:'DELETE'}); loadUsers(); }
+    async function toggleUser(id,status){ await api('/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}); loadUsers(); }
+
+    async function loadRedemptions(){ const res=await api('/admin/redemptions'); if(!res.ok)return; const rs=await res.json();
+        document.getElementById('redemptionTable').innerHTML=rs.map(r=>`<tr><td><code>${r.code}</code></td><td>${r.quota}</td>
+            <td><span class="status ${r.status?'status-on':'status-off'}">${r.status?'未使用':'已使用'}</span></td>
+            <td>${r.created_by||'-'}</td><td>${r.redeemed_by||'-'}</td></tr>`).join(''); }
+    async function createRedemptions(){ const data={quota:parseInt(v('rQuota'))||0,count:parseInt(v('rCount'))||1};
+        const res=await api('/admin/redemptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        const d=await res.json(); if(d.codes){ document.getElementById('rCodes').textContent='已生成：\n'+d.codes.join('\n'); } loadRedemptions(); }
+    async function redeemCode(){ const code=v('redeemCode'); if(!code)return;
+        const res=await api('/api/redemption/redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
+        const d=await res.json(); alert(d.message||(res.ok?'兑换成功':'兑换失败')); document.getElementById('redeemCode').value=''; }
+
+    async function loadPresets(){ const res=await api('/api/model_presets'); if(!res.ok)return; const d=await res.json();
+        document.getElementById('sRatio').value=JSON.stringify(d.model_ratio||{});
+        document.getElementById('sCompRatio').value=JSON.stringify(d.completion_ratio||{}); alert('已载入预设价格，记得点保存设置'); }
 </script>
 </body>
 </html>

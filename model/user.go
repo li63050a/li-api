@@ -17,8 +17,10 @@ type User struct {
 	ID           int    `json:"id"`
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"` // 格式 sha256(salt+pw):salt
-	Role         string `json:"role"`          // root
-	Status       int    `json:"status"`        // 1 启用
+	Role         string `json:"role"`          // root | user
+	Status       int    `json:"status"`        // 1 启用 0 禁用
+	Quota        int64  `json:"quota"`         // 额度（token 数），-1 表示不限
+	Used         int64  `json:"used"`          // 已消耗
 }
 
 // Session 登录会话
@@ -117,8 +119,13 @@ func CreateSession(username string) string {
 	return tok
 }
 
-// InsertUser 新增用户（注册用），默认角色 user
+// InsertUser 新增用户（注册用），默认角色 user，额度 0
 func InsertUser(username, password string) error {
+	return CreateUser(username, password, "user", 0)
+}
+
+// CreateUser 管理员创建用户（可指定角色与额度）
+func CreateUser(username, password, role string, quota int64) error {
 	userMu.Lock()
 	defer userMu.Unlock()
 	for _, u := range users {
@@ -126,11 +133,111 @@ func InsertUser(username, password string) error {
 			return errors.New("username already exists")
 		}
 	}
-	u := User{ID: userNext, Username: username, Role: "user", Status: 1}
+	u := User{ID: userNext, Username: username, Role: role, Status: 1, Quota: quota, Used: 0}
 	u.PasswordHash = hashPassword(password)
 	users = append(users, u)
 	userNext++
 	return saveUsers()
+}
+
+// GetAllUsers 返回全部用户（脱敏：不含密码哈希）
+func GetAllUsers() []User {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	cp := make([]User, len(users))
+	for i := range users {
+		u := users[i]
+		u.PasswordHash = ""
+		cp[i] = u
+	}
+	return cp
+}
+
+// GetUserByUsername 按用户名查询
+func GetUserByUsername(name string) (*User, bool) {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	for i := range users {
+		if users[i].Username == name {
+			u := users[i]
+			return &u, true
+		}
+	}
+	return nil, false
+}
+
+// UpdateUser 更新用户资料（角色 / 状态 / 额度 / 密码）
+func UpdateUser(id int, patch User) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].ID == id {
+			if patch.Username != "" {
+				users[i].Username = patch.Username
+			}
+			if patch.Role != "" {
+				users[i].Role = patch.Role
+			}
+			if patch.PasswordHash != "" {
+				users[i].PasswordHash = patch.PasswordHash
+			}
+			users[i].Status = patch.Status
+			users[i].Quota = patch.Quota
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// AddUserQuota 给用户增加额度（充值码 / 管理员调整用，可正可负）
+func AddUserQuota(name string, n int64) {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == name {
+			users[i].Quota += n
+			_ = saveUsers()
+			return
+		}
+	}
+}
+
+// UserQuotaAllowed 预检用户额度是否还可继续请求（转发前调用，不扣减）
+// 用户不存在、被禁用或额度已耗尽时返回 false
+func UserQuotaAllowed(name string) bool {
+	if name == "" {
+		return true
+	}
+	userMu.RLock()
+	defer userMu.RUnlock()
+	for i := range users {
+		if users[i].Username == name {
+			if users[i].Status != 1 {
+				return false
+			}
+			if users[i].Quota >= 0 && users[i].Used >= users[i].Quota {
+				return false
+			}
+			return true
+		}
+	}
+	return true
+}
+
+// AddUserUsed 记账式扣减用户已用额度（响应完成后调用）
+func AddUserUsed(name string, n int64) {
+	if name == "" {
+		return
+	}
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == name {
+			users[i].Used += n
+			_ = saveUsers()
+			return
+		}
+	}
 }
 
 // IsRoot 判断用户名是否为 root（拥有全部权限）
@@ -143,6 +250,27 @@ func IsRoot(username string) bool {
 		}
 	}
 	return false
+}
+
+// HashPassword 导出密码哈希函数（供 handler 在更新密码时使用）
+func HashPassword(pw string) string {
+	return hashPassword(pw)
+}
+
+// DeleteUser 删除指定用户（root 不可被删除）
+func DeleteUser(id int) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].ID == id {
+			if users[i].Role == "root" {
+				return errors.New("不能删除 root 账户")
+			}
+			users = append(users[:i], users[i+1:]...)
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
 }
 
 // GetSession 查询会话

@@ -81,6 +81,11 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Quota Exceeded", http.StatusForbidden)
 		return
 	}
+	// 令牌所属用户的额度预检（仅记账，响应完成后统一累加）
+	if !model.UserQuotaAllowed(tok.Owner) {
+		http.Error(w, "User Quota Exceeded", http.StatusForbidden)
+		return
+	}
 	group := tok.Group
 	if group == "" {
 		group = "default"
@@ -149,6 +154,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		cost := maxInt64(1, cw.bytes/4)
 		cost = model.ModelCost(modelName, cost, 0)
 		_ = model.UseToken(key, cost)
+		model.AddUserUsed(tok.Owner, cost)
+		recordStats(cost)
 		logAccess(map[string]interface{}{
 			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
 			"model": modelName, "group": group, "token": maskToken(key),
@@ -212,6 +219,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	cost := model.ModelCost(modelName, prompt, comp)
 	_ = model.UseToken(key, cost)
+	model.AddUserUsed(tok.Owner, cost)
+	recordStats(cost)
 
 	logAccess(map[string]interface{}{
 		"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,

@@ -15,7 +15,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（提交时递增）
-const Version = "v1.4.0"
+const Version = "v1.5.0"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -68,6 +68,9 @@ func main() {
 	if err := model.InitUsers(); err != nil {
 		log.Fatal("User store init:", err)
 	}
+	if err := model.InitRedemptions(); err != nil {
+		log.Fatal("Redemption store init:", err)
+	}
 
 	// 初始加载缓存
 	if err := cache.Refresh(); err != nil {
@@ -84,6 +87,9 @@ func main() {
 	http.HandleFunc("/api/user/logout", handler.LogoutHandler)
 	http.HandleFunc("/api/user/self", handler.SelfHandler)
 	http.HandleFunc("/api/setting", handler.SettingHandler)
+	http.HandleFunc("/api/dashboard", handler.DashboardHandler)
+	http.HandleFunc("/api/model_presets", handler.ModelPresetsHandler)
+	http.HandleFunc("/api/redemption/redeem", handler.RedeemHandler)
 
 	// 管理 API
 	http.HandleFunc("/admin/routes", handler.AdminHandler)
@@ -93,6 +99,10 @@ func main() {
 	http.HandleFunc("/admin/channels", handler.ChannelHandler)
 	http.HandleFunc("/admin/channels/", handler.ChannelHandler)
 	http.HandleFunc("/admin/channels/test/", handler.ChannelTestHandler)
+	http.HandleFunc("/admin/users", handler.UsersHandler)
+	http.HandleFunc("/admin/users/", handler.UsersHandler)
+	http.HandleFunc("/admin/redemptions", handler.RedemptionHandler)
+	http.HandleFunc("/admin/redemptions/", handler.RedemptionHandler)
 
 	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*）
 	http.HandleFunc("/v1/", handler.RelayHandler)
