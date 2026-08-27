@@ -22,6 +22,9 @@ func main() {
     if err := model.InitTokens(); err != nil {
         log.Fatal("Token store init:", err)
     }
+    if err := model.InitChannels(); err != nil {
+        log.Fatal("Channel store init:", err)
+    }
 
     // 初始加载缓存
     if err := cache.Refresh(); err != nil {
@@ -38,6 +41,11 @@ func main() {
     http.HandleFunc("/admin/routes/", handler.AdminHandler) // 处理带 ID 的路径
     http.HandleFunc("/admin/tokens", handler.TokenHandler)
     http.HandleFunc("/admin/tokens/", handler.TokenHandler) // 处理带 key 的路径
+    http.HandleFunc("/admin/channels", handler.ChannelHandler)
+    http.HandleFunc("/admin/channels/", handler.ChannelHandler) // 处理带 ID 的路径
+
+    // 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*）
+    http.HandleFunc("/v1/", handler.RelayHandler)
 
     // 核心转发（所有 /proxy/ 请求）
     http.HandleFunc("/proxy/", handler.ProxyHandler)

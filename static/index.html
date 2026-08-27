@@ -25,16 +25,18 @@
         .status-on { background: #c6f6d5; color: #22543d; }
         .status-off { background: #fed7d7; color: #9b2c2c; }
         .token-input { max-width: 320px; }
+        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🌐 API 网关</h1>
+    <h1>🌐 API 网关（仿 new-api）</h1>
     <div class="form-group">
         <input id="adminToken" class="token-input" placeholder="管理口令（若服务端设置了 ADMIN_TOKEN）" />
     </div>
     <div class="tabs">
-        <button class="active" onclick="showTab('routes')">路由</button>
+        <button class="active" onclick="showTab('routes')">路由(旧)</button>
+        <button onclick="showTab('channels')">渠道</button>
         <button onclick="showTab('tokens')">令牌</button>
     </div>
 
@@ -59,16 +61,42 @@
         </table>
     </div>
 
+    <!-- 渠道面板 -->
+    <div id="channels" class="panel">
+        <div class="form-group">
+            <input id="cName" placeholder="名称" />
+            <input id="cType" placeholder="类型(openai/azure/anthropic)" />
+            <input id="cBaseURL" placeholder="上游基地址" />
+            <input id="cKeys" placeholder="上游密钥(逗号分隔,轮流)" />
+            <select id="cAuthType"><option value="bearer">Bearer</option><option value="header">Header</option><option value="query">Query</option></select>
+            <input id="cAuthKey" placeholder="认证键" />
+            <input id="cModels" placeholder="支持模型(逗号/*)" value="*" />
+            <input id="cGroup" placeholder="分组" value="default" />
+            <input id="cPriority" type="number" placeholder="优先级" value="0" />
+            <input id="cWeight" type="number" placeholder="权重" value="1" />
+            <input id="cRateLimit" type="number" placeholder="每分钟限流" value="0" />
+            <label><input type="checkbox" id="cStatus" checked /> 启用</label>
+            <button class="btn btn-success" onclick="addChannel()">添加</button>
+            <button class="btn btn-primary" onclick="loadChannels()">刷新</button>
+        </div>
+        <table>
+            <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="channelTable"></tbody>
+        </table>
+    </div>
+
     <!-- 令牌面板 -->
     <div id="tokens" class="panel">
         <div class="form-group">
             <input id="tName" placeholder="名称/备注" />
-            <input id="tQuota" type="number" placeholder="额度(请求数, -1 不限)" value="-1" />
+            <input id="tGroup" placeholder="分组" value="default" />
+            <input id="tQuota" type="number" placeholder="额度(token数, -1 不限)" value="-1" />
+            <label><input type="checkbox" id="tUnlimited" /> 不限</label>
             <button class="btn btn-success" onclick="addToken()">生成令牌</button>
             <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
         </div>
         <table>
-            <thead><tr><th>Key</th><th>名称</th><th>已用/额度</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>Key</th><th>名称</th><th>分组</th><th>已用/额度</th><th>状态</th><th>操作</th></tr></thead>
             <tbody id="tokenTable"></tbody>
         </table>
     </div>
@@ -83,81 +111,70 @@
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         event.target.classList.add('active');
         document.getElementById(id).classList.add('active');
-        if (id === 'routes') loadRoutes(); else loadTokens();
+        if (id === 'routes') loadRoutes();
+        else if (id === 'channels') loadChannels();
+        else loadTokens();
     }
 
     async function loadRoutes() {
         const res = await fetch('/admin/routes' + adminToken());
         const routes = await res.json();
         document.getElementById('routeTable').innerHTML = routes.map(r => `
-            <tr>
-                <td>${r.id}</td><td>${r.name}</td><td>${r.prefix}</td><td>${r.upstream_url}</td>
-                <td>${r.auth_type} ${r.auth_key ? '('+r.auth_key+')' : ''}</td>
-                <td>${r.auth_values ? '✔' : '-'}</td>
-                <td>${r.rate_limit || '不限'}</td>
-                <td><span class="status ${r.enable ? 'status-on' : 'status-off'}">${r.enable ? '启用' : '禁用'}</span></td>
-                <td><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></td>
-            </tr>`).join('');
+            <tr><td>${r.id}</td><td>${r.name}</td><td>${r.prefix}</td><td>${r.upstream_url}</td>
+            <td>${r.auth_type} ${r.auth_key ? '('+r.auth_key+')' : ''}</td><td>${r.auth_values ? '✔' : '-'}</td>
+            <td>${r.rate_limit || '不限'}</td><td><span class="status ${r.enable ? 'status-on':'status-off'}">${r.enable?'启用':'禁用'}</span></td>
+            <td><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></td></tr>`).join('');
     }
-
     async function addRoute() {
-        const data = {
-            name: document.getElementById('name').value,
-            prefix: document.getElementById('prefix').value,
-            upstream_url: document.getElementById('upstream').value,
-            auth_type: document.getElementById('authType').value,
-            auth_key: document.getElementById('authKey').value,
-            auth_value: document.getElementById('authValue').value,
-            auth_values: document.getElementById('authValues').value,
-            rate_limit: parseInt(document.getElementById('rateLimit').value) || 0,
-            need_api_key: document.getElementById('needApiKey').checked,
-            enable: true,
-        };
-        await fetch('/admin/routes' + adminToken(), {
-            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
-        });
-        loadRoutes();
-        ['name','prefix','upstream','authKey','authValue','authValues'].forEach(i => document.getElementById(i).value = '');
+        const data = { name: v('name'), prefix: v('prefix'), upstream_url: v('upstream'),
+            auth_type: v('authType'), auth_key: v('authKey'), auth_value: v('authValue'),
+            auth_values: v('authValues'), rate_limit: parseInt(v('rateLimit'))||0,
+            need_api_key: document.getElementById('needApiKey').checked, enable: true };
+        await fetch('/admin/routes' + adminToken(), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        loadRoutes(); ['name','prefix','upstream','authKey','authValue','authValues'].forEach(i => document.getElementById(i).value='');
     }
+    async function deleteRoute(id) { if (!confirm('确认删除？')) return; await fetch('/admin/routes/'+id+adminToken(), {method:'DELETE'}); loadRoutes(); }
 
-    async function deleteRoute(id) {
-        if (!confirm('确认删除？')) return;
-        await fetch('/admin/routes/' + id + adminToken(), { method: 'DELETE' });
-        loadRoutes();
+    async function loadChannels() {
+        const res = await fetch('/admin/channels' + adminToken());
+        const cs = await res.json();
+        document.getElementById('channelTable').innerHTML = cs.map(c => `
+            <tr><td>${c.id}</td><td>${c.name}</td><td>${c.type}</td><td>${c.base_url}</td>
+            <td>${c.models}</td><td>${c.group}</td><td>${c.priority}</td>
+            <td><span class="status ${c.status?'status-on':'status-off'}">${c.status?'启用':'禁用'}</span></td>
+            <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join('');
     }
+    async function addChannel() {
+        const data = { name: v('cName'), type: v('cType'), base_url: v('cBaseURL'), keys: v('cKeys'),
+            auth_type: v('cAuthType'), auth_key: v('cAuthKey'), models: v('cModels'), group: v('cGroup'),
+            priority: parseInt(v('cPriority'))||0, weight: parseInt(v('cWeight'))||1,
+            rate_limit: parseInt(v('cRateLimit'))||0, status: document.getElementById('cStatus').checked?1:0 };
+        await fetch('/admin/channels' + adminToken(), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        loadChannels();
+    }
+    async function deleteChannel(id) { if (!confirm('确认删除？')) return; await fetch('/admin/channels/'+id+adminToken(), {method:'DELETE'}); loadChannels(); }
 
     async function loadTokens() {
         const res = await fetch('/admin/tokens' + adminToken());
-        const tokens = await res.json();
-        document.getElementById('tokenTable').innerHTML = tokens.map(t => `
-            <tr>
-                <td><code>${t.key}</code></td><td>${t.name || '-'}</td>
-                <td>${t.used} / ${t.quota < 0 ? '不限' : t.quota}</td>
-                <td><span class="status ${t.status ? 'status-on' : 'status-off'}">${t.status ? '启用' : '禁用'}</span></td>
-                <td><button class="btn btn-danger" onclick="deleteToken('${t.key}')">删除</button></td>
-            </tr>`).join('');
+        const ts = await res.json();
+        document.getElementById('tokenTable').innerHTML = ts.map(t => `
+            <tr><td><code>${t.key}</code></td><td>${t.name||'-'}</td><td>${t.group||'default'}</td>
+            <td>${t.used} / ${t.unlimited? '不限' : (t.quota<0?'不限':t.quota)}</td>
+            <td><span class="status ${t.status?'status-on':'status-off'}">${t.status?'启用':'禁用'}</span></td>
+            <td><button class="btn btn-danger" onclick="deleteToken('${t.key}')">删除</button></td></tr>`).join('');
     }
-
     async function addToken() {
-        const data = {
-            name: document.getElementById('tName').value,
-            quota: parseInt(document.getElementById('tQuota').value) || -1,
-        };
-        const res = await fetch('/admin/tokens' + adminToken(), {
-            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
-        });
+        const data = { name: v('tName'), group: v('tGroup'),
+            quota: document.getElementById('tUnlimited').checked ? -1 : (parseInt(v('tQuota'))||-1),
+            unlimited: document.getElementById('tUnlimited').checked?1:0 };
+        const res = await fetch('/admin/tokens' + adminToken(), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
         const t = await res.json();
         alert('已生成令牌：\n' + t.key);
-        loadTokens();
-        document.getElementById('tName').value = '';
+        loadTokens(); document.getElementById('tName').value='';
     }
+    async function deleteToken(key) { if (!confirm('确认删除该令牌？')) return; await fetch('/admin/tokens/'+key+adminToken(), {method:'DELETE'}); loadTokens(); }
 
-    async function deleteToken(key) {
-        if (!confirm('确认删除该令牌？')) return;
-        await fetch('/admin/tokens/' + key + adminToken(), { method: 'DELETE' });
-        loadTokens();
-    }
-
+    function v(id) { return document.getElementById(id).value; }
     loadRoutes();
 </script>
 </body>

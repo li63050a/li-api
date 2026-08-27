@@ -23,13 +23,15 @@ var ErrTokenInvalid = errors.New("token invalid")
 // ErrQuotaExceeded 表示令牌额度已用完
 var ErrQuotaExceeded = errors.New("quota exceeded")
 
-// Token 代表一个面向用户的访问令牌，可设置额度（请求次数）
+// Token 代表一个面向用户的访问令牌（仿 new-api：令牌按分组关联渠道，按额度计费）
 type Token struct {
-	Key    string    `json:"key"`
-	Name   string    `json:"name"`
-	Quota  int       `json:"quota"`  // 允许的最大请求数，-1 表示不限制
-	Used   int       `json:"used"`
-	Status int       `json:"status"` // 1 启用，0 禁用
+	Key       string    `json:"key"`
+	Name      string    `json:"name"`
+	Group     string    `json:"group"`      // 分组，与渠道的分组对应
+	Quota     int64     `json:"quota"`      // 额度（token 单位），-1 表示不限制
+	Used      int64     `json:"used"`
+	Unlimited int       `json:"unlimited"`  // 1 表示不限额度
+	Status    int       `json:"status"`     // 1 启用，0 禁用
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -101,6 +103,9 @@ func InsertToken(t *Token) (int64, error) {
 	if t.Status == 0 {
 		t.Status = 1
 	}
+	if t.Group == "" {
+		t.Group = "default"
+	}
 	if t.Key == "" {
 		t.Key = randToken(32)
 	}
@@ -123,12 +128,51 @@ func UpdateToken(key string, t *Token) error {
 				tokens[i].Key = t.Key
 			}
 			tokens[i].Name = t.Name
+			tokens[i].Group = t.Group
 			tokens[i].Quota = t.Quota
+			tokens[i].Unlimited = t.Unlimited
 			tokens[i].Status = t.Status
 			return saveTokens()
 		}
 	}
 	return ErrNotFound
+}
+
+// GetToken 按 key 获取令牌（不修改状态）
+func GetToken(key string) (*Token, error) {
+	tokenMu.RLock()
+	defer tokenMu.RUnlock()
+	for i := range tokens {
+		if tokens[i].Key == key {
+			t := tokens[i]
+			return &t, nil
+		}
+	}
+	return nil, ErrTokenInvalid
+}
+
+// UseToken 校验并扣减额度（cost 为本次消耗的 token 数）
+// 返回错误：令牌无效 / 禁用 / 额度不足
+func UseToken(key string, cost int64) error {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+	for i := range tokens {
+		if tokens[i].Key == key {
+			if tokens[i].Status != 1 {
+				return ErrTokenInvalid
+			}
+			if tokens[i].Unlimited == 0 && tokens[i].Quota >= 0 {
+				if tokens[i].Used+cost > tokens[i].Quota {
+					return ErrQuotaExceeded
+				}
+			}
+			tokens[i].Used += cost
+			tokens[i].UpdatedAt = time.Now()
+			_ = saveTokens()
+			return nil
+		}
+	}
+	return ErrTokenInvalid
 }
 
 // DeleteToken 删除令牌

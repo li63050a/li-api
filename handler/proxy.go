@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +142,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 5. 选取起始上游密钥（轮询），并准备故障转移
 	keys := route.Keys()
+	remaining := strings.TrimPrefix(targetPath, route.Prefix)
 	var startIdx int
 	if len(keys) > 1 {
 		v, _ := keyCounters.LoadOrStore(route.ID, new(uint64))
@@ -165,7 +164,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	var serve func(curKey string)
 	serve = func(curKey string) {
 		tries++
-		proxy := buildProxy(route, curKey, targetPath, r)
+		proxy := buildForwardProxy(r, route.UpstreamURL, remaining, route.AuthType, route.AuthKey, curKey)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			// 上游连接失败且仍有备用密钥时，自动故障转移到下一个
 			if len(keys) > 1 && tries < len(keys) {
@@ -215,51 +214,4 @@ func extractToken(r *http.Request) string {
 		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	}
 	return ""
-}
-
-// buildProxy 为指定上游密钥构建一个反向代理
-func buildProxy(route *model.Route, key, targetPath string, orig *http.Request) *httputil.ReverseProxy {
-	remaining := strings.TrimPrefix(targetPath, route.Prefix)
-	fullURL := route.UpstreamURL + remaining
-	if orig.URL.RawQuery != "" {
-		fullURL += "?" + orig.URL.RawQuery
-	}
-	parsed, err := url.Parse(fullURL)
-	if err != nil {
-		// 解析失败时返回一个直接报错的代理
-		return &httputil.ReverseProxy{
-			Director: func(*http.Request) {},
-			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e error) {
-				http.Error(w, "Invalid upstream URL", http.StatusInternalServerError)
-			},
-		}
-	}
-
-	proxy := httputil.NewSingleHostReverseProxy(parsed)
-	proxy.Transport = sharedTransport
-	proxy.FlushInterval = 100 * time.Millisecond // 支持 SSE / 流式响应边收边发
-
-	proxy.Director = func(req *http.Request) {
-		req.URL.Scheme = parsed.Scheme
-		req.URL.Host = parsed.Host
-		req.URL.Path = parsed.Path
-		req.URL.RawQuery = parsed.RawQuery
-		req.Host = parsed.Host
-		// 复制原始 Header
-		for k, v := range orig.Header {
-			req.Header[k] = v
-		}
-		// 注入上游认证
-		switch route.AuthType {
-		case "bearer":
-			req.Header.Set("Authorization", "Bearer "+key)
-		case "header":
-			req.Header.Set(route.AuthKey, key)
-		case "query":
-			q := req.URL.Query()
-			q.Set(route.AuthKey, key)
-			req.URL.RawQuery = q.Encode()
-		}
-	}
-	return proxy
 }

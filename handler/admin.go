@@ -119,3 +119,94 @@ func AdminHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
     }
 }
+// ChannelHandler 处理 /admin/channels 的 CRUD（仿 new-api 的渠道管理）
+func ChannelHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if token := adminToken(); token != "" {
+		if r.URL.Query().Get("token") != token && r.Header.Get("X-Admin-Token") != token {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/admin/channels")
+	parts := strings.Split(path, "/")
+	idStr := ""
+	if len(parts) >= 2 {
+		idStr = strings.Trim(parts[1], "/")
+	}
+
+	switch r.Method {
+	case "GET":
+		if idStr == "" {
+			chans, err := model.GetAllChannelsRaw()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(chans)
+			return
+		}
+		http.NotFound(w, r)
+
+	case "POST":
+		var c model.Channel
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if _, err := model.InsertChannel(&c); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(c)
+
+	case "PUT":
+		if idStr == "" {
+			http.Error(w, "Missing ID", http.StatusBadRequest)
+			return
+		}
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "Invalid ID", http.StatusBadRequest)
+			return
+		}
+		var c model.Channel
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if err := model.UpdateChannel(id, &c); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(c)
+
+	case "DELETE":
+		if idStr == "" {
+			http.Error(w, "Missing ID", http.StatusBadRequest)
+			return
+		}
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "Invalid ID", http.StatusBadRequest)
+			return
+		}
+		if err := model.DeleteChannel(id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}

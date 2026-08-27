@@ -13,21 +13,30 @@
 
 ---
 
+## 核心概念（仿 new-api）
+
+本网关按 new-api 的思路组织，而非简单前缀转发：
+
+- **渠道 Channel**：一个上游服务实例（如某个 OpenAI / Anthropic 账号）。含 `base_url`、多个上游密钥（轮询+故障转移）、支持的 `models`、所属 `group`、优先级/权重、限流。
+- **令牌 Token**：面向用户的访问凭证。绑定到某个 `group`，按 `quota`（token 额度）计费；请求需携带 `Authorization: Bearer <token>`。
+- **分组 Group**：令牌与渠道通过分组关联——某分组的令牌只会路由到同分组的渠道。
+- **模型路由**：请求到达后，按 `令牌.group` + 请求体中的 `model` 选出支持的渠道，按优先级/权重挑选，再注入该渠道的密钥转发。
+
+此外保留旧的「前缀路由 `/proxy/*`」模式，适合不走模型名的简单代理场景。
+
 ## 功能特性
 
 | 功能 | 说明 |
 | --- | --- |
-| 前缀路由 | 按请求路径前缀匹配到不同上游（如 `/v1` → OpenAI，`/anthropic` → Claude） |
-| 上游认证注入 | 支持 `none` / `bearer` / `header` / `query` 四种方式自动注入密钥 |
-| 多密钥轮询 + 故障转移 | 一个路由可配置多个上游密钥（`auth_values`），请求间轮询；上游连接失败时自动切换下一个 |
-| 入站令牌（用户 Key） | 面向用户的令牌，请求需携带 `X-API-Key` 或 `Authorization: Bearer` 才允许转发 |
-| 令牌额度 | 每个令牌可设请求额度（`quota`，`-1` 为不限），超限返回 403 |
-| 限流 | 按路由维度限制每分钟请求数 |
-| 路径白名单 | 可选限制该路由只转发指定路径 |
+| 模型路由 | 按 `分组 + model` 选择渠道，支持优先级 / 权重 |
+| 渠道多密钥 | 一个渠道可配多个上游密钥，请求间轮询，连接失败自动故障转移 |
+| 令牌与额度 | 用户令牌按 `group` 关联渠道，按消耗 token 数计费（`usage` 或估算） |
+| 上游认证注入 | `bearer` / `header` / `query` 三种方式自动注入密钥，并清除用户自身凭据 |
+| 旧版前缀代理 | `/proxy/*` 仍可用，按路径前缀转发（兼容老用法） |
 | 流式转发 | 支持 SSE / 流式响应（LLM 对话必备），边收边发 |
-| 管理后台 | 内置静态页面，可视化增删改路由与令牌 |
-| 访问日志 | 每次转发请求追加写入 `data/access.log`（JSONL，含状态码/耗时/尝试次数） |
-| 配置持久化 | 路由存于 `data/routes.json`，令牌存于 `data/tokens.json`，热更新内存缓存 |
+| 访问日志 | 每次转发写入 `data/access.log`（JSONL：状态码/耗时/消耗/尝试次数） |
+| 管理后台 | 内置静态页面，可视化增删改 渠道 / 令牌 / 路由 |
+| 配置持久化 | `data/channels.json` / `data/tokens.json` / `data/routes.json`，热更新内存缓存 |
 
 ---
 
@@ -77,19 +86,27 @@ curl -X POST http://localhost:8080/admin/routes \
 
 除页面外，也可直接调用 REST API（设置 `ADMIN_TOKEN` 后需带 `?token=` 或 `X-Admin-Token`）：
 
-- `GET/POST /admin/routes` —— 路由列表 / 新增
-- `PUT/DELETE /admin/routes/{id}` —— 更新 / 删除路由
+- `GET/POST /admin/channels` —— 渠道列表 / 新增
+- `PUT/DELETE /admin/channels/{id}` —— 更新 / 删除渠道
 - `GET/POST /admin/tokens` —— 令牌列表 / 生成（POST 不传 `key` 则自动生成）
 - `PUT/DELETE /admin/tokens/{key}` —— 更新 / 删除令牌
+- `GET/POST /admin/routes` —— 旧版前缀路由列表 / 新增
+- `PUT/DELETE /admin/routes/{id}` —— 更新 / 删除路由
 
-### 令牌（用户侧 Key）
+### 快速搭建（仿 new-api）
 
-当需要对外提供统一入口时：
+1. 在「渠道」页添加一个渠道：`base_url` 填上游（如 `https://api.openai.com`），`models` 填支持的模型（如 `gpt-4o`，多个逗号分隔，`*` 表示全部），`keys` 填上游密钥（多个逗号分隔轮流），`group` 填 `default`。
+2. 在「令牌」页生成令牌，分组同样填 `default`，可设额度（token 数，`-1` 不限）。
+3. 用户即可用 OpenAI 兼容方式调用：
 
-1. 在「令牌」页生成令牌（可设额度）；
-2. 在「路由」中开启「需令牌」，并填上**上游**的多密钥（`auth_values`，逗号分隔，轮流使用）；
-3. 用户用 `Authorization: Bearer <令牌>` 或 `X-API-Key: <令牌>` 访问 `/proxy/...`，网关先校验令牌额度，
-   再轮询注入上游密钥完成转发。
+```bash
+curl https://你的网关/v1/chat/completions \
+  -H "Authorization: Bearer <令牌>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}'
+```
+
+网关会按 `分组 + model` 选渠道、注入上游密钥、扣减令牌额度，并把响应（含 `usage`）原样返回。
 
 ---
 
