@@ -19,12 +19,14 @@
 | --- | --- |
 | 前缀路由 | 按请求路径前缀匹配到不同上游（如 `/v1` → OpenAI，`/anthropic` → Claude） |
 | 上游认证注入 | 支持 `none` / `bearer` / `header` / `query` 四种方式自动注入密钥 |
-| 入站校验 | 可选要求请求携带 `X-API-Key` 才允许转发 |
+| 多密钥轮询 + 故障转移 | 一个路由可配置多个上游密钥（`auth_values`），请求间轮询；上游连接失败时自动切换下一个 |
+| 入站令牌（用户 Key） | 面向用户的令牌，请求需携带 `X-API-Key` 或 `Authorization: Bearer` 才允许转发 |
+| 令牌额度 | 每个令牌可设请求额度（`quota`，`-1` 为不限），超限返回 403 |
 | 限流 | 按路由维度限制每分钟请求数 |
 | 路径白名单 | 可选限制该路由只转发指定路径 |
 | 流式转发 | 支持 SSE / 流式响应（LLM 对话必备），边收边发 |
-| 管理后台 | 内置静态页面，可视化增删改路由 |
-| 配置持久化 | 路由存于 `data/routes.json`，热更新内存缓存 |
+| 管理后台 | 内置静态页面，可视化增删改路由与令牌 |
+| 配置持久化 | 路由存于 `data/routes.json`，令牌存于 `data/tokens.json`，热更新内存缓存 |
 
 ---
 
@@ -67,6 +69,26 @@ curl -X POST http://localhost:8080/admin/routes \
 
 之后访问 `http://localhost:8080/proxy/v1/chat/completions` 即等价于访问上游对应接口，
 并由网关自动带上 `Authorization: Bearer sk-xxxx`。
+
+---
+
+## 管理 API
+
+除页面外，也可直接调用 REST API（设置 `ADMIN_TOKEN` 后需带 `?token=` 或 `X-Admin-Token`）：
+
+- `GET/POST /admin/routes` —— 路由列表 / 新增
+- `PUT/DELETE /admin/routes/{id}` —— 更新 / 删除路由
+- `GET/POST /admin/tokens` —— 令牌列表 / 生成（POST 不传 `key` 则自动生成）
+- `PUT/DELETE /admin/tokens/{key}` —— 更新 / 删除令牌
+
+### 令牌（用户侧 Key）
+
+当需要对外提供统一入口时：
+
+1. 在「令牌」页生成令牌（可设额度）；
+2. 在「路由」中开启「需令牌」，并填上**上游**的多密钥（`auth_values`，逗号分隔，轮流使用）；
+3. 用户用 `Authorization: Bearer <令牌>` 或 `X-API-Key: <令牌>` 访问 `/proxy/...`，网关先校验令牌额度，
+   再轮询注入上游密钥完成转发。
 
 ---
 
@@ -115,7 +137,8 @@ curl -X POST http://localhost:8080/admin/routes \
 | `upstream_url` | 上游基地址，如 `https://api.openai.com` |
 | `auth_type` | `none` / `bearer` / `header` / `query` |
 | `auth_key` | header 或 query 的键名 |
-| `auth_value` | 认证值 / token |
+| `auth_value` | 认证值 / token（单密钥） |
+| `auth_values` | 多个上游密钥，逗号分隔，请求间轮询（故障转移） |
 | `timeout` | 上游超时（秒），默认 30 |
 | `need_api_key` | 是否要求入站请求带 `X-API-Key` |
 | `allowed_paths` | 逗号分隔的白名单路径，为空表示全部放行 |

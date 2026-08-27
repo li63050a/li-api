@@ -10,6 +10,11 @@ import (
     "strings"
 )
 
+// adminToken 返回管理口令（未设置则返回空）
+func adminToken() string {
+    return os.Getenv("ADMIN_TOKEN")
+}
+
 // AdminHandler 处理 /admin/routes 的 CRUD
 func AdminHandler(w http.ResponseWriter, r *http.Request) {
     // 设置 CORS（方便前端调试）
@@ -23,7 +28,7 @@ func AdminHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     // 管理口令校验（设置了 ADMIN_TOKEN 才生效）
-    if token := os.Getenv("ADMIN_TOKEN"); token != "" {
+    if token := adminToken(); token != "" {
         if r.URL.Query().Get("token") != token && r.Header.Get("X-Admin-Token") != token {
             http.Error(w, "Forbidden", http.StatusForbidden)
             return

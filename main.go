@@ -19,6 +19,9 @@ func main() {
     if err := model.Init(); err != nil {
         log.Fatal("Store init:", err)
     }
+    if err := model.InitTokens(); err != nil {
+        log.Fatal("Token store init:", err)
+    }
 
     // 初始加载缓存
     if err := cache.Refresh(); err != nil {
@@ -33,6 +36,8 @@ func main() {
     // 管理 API
     http.HandleFunc("/admin/routes", handler.AdminHandler)
     http.HandleFunc("/admin/routes/", handler.AdminHandler) // 处理带 ID 的路径
+    http.HandleFunc("/admin/tokens", handler.TokenHandler)
+    http.HandleFunc("/admin/tokens/", handler.TokenHandler) // 处理带 key 的路径
 
     // 核心转发（所有 /proxy/ 请求）
     http.HandleFunc("/proxy/", handler.ProxyHandler)

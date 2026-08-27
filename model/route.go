@@ -5,12 +5,33 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 // ErrNotFound 表示路由不存在
 var ErrNotFound = errors.New("route not found")
+
+// Keys 返回该路由的上游密钥列表（优先 AuthValues，其次 AuthValue）
+func (r *Route) Keys() []string {
+	if r.AuthValues != "" {
+		parts := strings.Split(r.AuthValues, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	if r.AuthValue != "" {
+		return []string{r.AuthValue}
+	}
+	return nil
+}
 
 // Route 描述一条转发路由
 type Route struct {
@@ -21,6 +42,7 @@ type Route struct {
 	AuthType     string    `json:"auth_type"`    // none, bearer, header, query
 	AuthKey      string    `json:"auth_key"`
 	AuthValue    string    `json:"auth_value"`
+	AuthValues   string    `json:"auth_values"`  // 多个上游密钥，逗号分隔，轮流使用（故障转移）
 	Timeout      int       `json:"timeout"`      // 秒
 	NeedAPIKey   bool      `json:"need_api_key"`
 	AllowedPaths string    `json:"allowed_paths"` // 逗号分隔，为空表示全部放行
