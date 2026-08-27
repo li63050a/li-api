@@ -128,6 +128,8 @@ curl -X POST http://localhost:8090/admin/channels \
 
 ## 管理 API
 
+> 完整的请求参数、响应字段与 curl 示例见 [docs/API.md](docs/API.md)。
+
 除页面外，也可直接调用 REST API（管理 / 设置类接口需带 `Authorization: Bearer <root会话>`）：
 
 - `POST /api/user/login` · `POST /api/user/register` · `POST /api/user/logout` · `GET /api/user/self`
