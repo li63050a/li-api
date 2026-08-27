@@ -18,13 +18,13 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 管理口令校验
-	if token := adminToken(); token != "" {
-		if r.URL.Query().Get("token") != token && r.Header.Get("X-Admin-Token") != token {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
+	// 管理会话校验
+	s, ok := requireSession(r)
+	if !ok {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
 	}
+	isRoot := model.IsRoot(s.Username)
 
 	// 解析 /admin/tokens/{key}
 	key := strings.TrimPrefix(r.URL.Path, "/admin/tokens")
@@ -37,6 +37,15 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if !isRoot {
+			own := list[:0]
+			for _, t := range list {
+				if t.Owner == s.Username {
+					own = append(own, t)
+				}
+			}
+			list = own
+		}
 		json.NewEncoder(w).Encode(list)
 
 	case "POST":
@@ -45,6 +54,7 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
+		t.Owner = s.Username
 		if _, err := model.InsertToken(&t); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -56,6 +66,12 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 		if key == "" {
 			http.Error(w, "Missing key", http.StatusBadRequest)
 			return
+		}
+		if !isRoot {
+			if cur, err := model.GetToken(key); err != nil || cur.Owner != s.Username {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 		var t model.Token
 		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
@@ -72,6 +88,12 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 		if key == "" {
 			http.Error(w, "Missing key", http.StatusBadRequest)
 			return
+		}
+		if !isRoot {
+			if cur, err := model.GetToken(key); err != nil || cur.Owner != s.Username {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 		if err := model.DeleteToken(key); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

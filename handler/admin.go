@@ -5,15 +5,9 @@ import (
     "api-gateway/model"
     "encoding/json"
     "net/http"
-    "os"
     "strconv"
     "strings"
 )
-
-// adminToken 返回管理口令（未设置则返回空）
-func adminToken() string {
-    return os.Getenv("ADMIN_TOKEN")
-}
 
 // AdminHandler 处理 /admin/routes 的 CRUD
 func AdminHandler(w http.ResponseWriter, r *http.Request) {
@@ -27,12 +21,10 @@ func AdminHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // 管理口令校验（设置了 ADMIN_TOKEN 才生效）
-    if token := adminToken(); token != "" {
-        if r.URL.Query().Get("token") != token && r.Header.Get("X-Admin-Token") != token {
-            http.Error(w, "Forbidden", http.StatusForbidden)
-            return
-        }
+    // 管理会话校验
+    if _, ok := requireSession(r); !ok {
+        http.Error(w, "Forbidden", http.StatusForbidden)
+        return
     }
 
     // 解析路径，支持 /admin/routes 和 /admin/routes/{id}
@@ -119,6 +111,35 @@ func AdminHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
     }
 }
+// SettingHandler 处理 /api/setting 的读取与更新（仅 root）
+func SettingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	s, ok := requireSession(r)
+	if !ok || !model.IsRoot(s.Username) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	switch r.Method {
+	case "GET":
+		json.NewEncoder(w).Encode(model.GetSetting())
+	case "PUT":
+		var patch model.Setting
+		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(model.UpdateSetting(patch))
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // ChannelHandler 处理 /admin/channels 的 CRUD（仿 new-api 的渠道管理）
 func ChannelHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -129,11 +150,9 @@ func ChannelHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if token := adminToken(); token != "" {
-		if r.URL.Query().Get("token") != token && r.Header.Get("X-Admin-Token") != token {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
+	if _, ok := requireSession(r); !ok {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
 	}
 
 	path := strings.TrimPrefix(r.URL.Path, "/admin/channels")

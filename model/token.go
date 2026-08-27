@@ -27,6 +27,7 @@ var ErrQuotaExceeded = errors.New("quota exceeded")
 type Token struct {
 	Key       string    `json:"key"`
 	Name      string    `json:"name"`
+	Owner     string    `json:"owner"`      // 创建者用户名（root 可见全部）
 	Group     string    `json:"group"`      // 分组，与渠道的分组对应
 	Quota     int64     `json:"quota"`      // 额度（token 单位），-1 表示不限制
 	Used      int64     `json:"used"`
@@ -162,7 +163,7 @@ func UseToken(key string, cost int64) error {
 				return ErrTokenInvalid
 			}
 			if tokens[i].Unlimited == 0 && tokens[i].Quota >= 0 {
-				if tokens[i].Used+cost > tokens[i].Quota {
+				if tokens[i].Used >= tokens[i].Quota {
 					return ErrQuotaExceeded
 				}
 			}

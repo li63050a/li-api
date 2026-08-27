@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,6 +18,51 @@ import (
 type target struct {
 	channel model.Channel
 	key     string
+}
+
+const (
+	failureThreshold     = 5                // 连续失败达到该次数则自动禁用渠道
+	autoRecoverCooldown  = 60 * time.Second // 自动禁用后多久允许试探性恢复
+)
+
+var (
+	autoDisabled sync.Map // channelID -> time.Time（被自动禁用的时刻）
+	failCount    sync.Map // channelID -> *int64（连续失败计数）
+)
+
+// channelUsable 判断渠道是否可用（启用且未被自动禁用冷却中）
+func channelUsable(c model.Channel) bool {
+	if c.Status != 1 {
+		return false
+	}
+	if v, ok := autoDisabled.Load(c.ID); ok {
+		if dt, ok2 := v.(time.Time); ok2 && time.Since(dt) < autoRecoverCooldown {
+			return false
+		}
+	}
+	return true
+}
+
+// markChannelSuccess 重置渠道失败计数并清除自动禁用
+func markChannelSuccess(id int) {
+	failCount.Store(id, new(int64))
+	autoDisabled.LoadAndDelete(id)
+}
+
+// markChannelFailure 记录一次失败，达到阈值则自动禁用渠道
+func markChannelFailure(id int) {
+	c, _ := failCount.LoadOrStore(id, new(int64))
+	n := atomic.AddInt64(c.(*int64), 1)
+	if n >= failureThreshold {
+		autoDisabled.Store(id, time.Now())
+		failCount.Store(id, new(int64))
+		log.Printf("channel %d auto-disabled after %d consecutive failures", id, failureThreshold)
+	}
+}
+
+// isChannelError 判断上游响应是否代表渠道自身异常（应计为失败并可能自动禁用）
+func isChannelError(status int) bool {
+	return status == 401 || status == 403 || status == 429 || status >= 500
 }
 
 // RelayHandler 仿 new-api 的模型路由转发：按 令牌分组 + 模型名 选择渠道
@@ -84,7 +131,13 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
 		}
 		proxy.ServeHTTP(cw, r)
+		if lastErr == nil && !isChannelError(cw.status) {
+			markChannelSuccess(t.channel.ID)
+		} else {
+			markChannelFailure(t.channel.ID)
+		}
 		cost := maxInt64(1, cw.bytes/4)
+		cost = model.ModelCost(modelName, cost)
 		_ = model.UseToken(key, cost)
 		logAccess(map[string]interface{}{
 			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
@@ -111,13 +164,16 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 			lastErr = err
 		}
 		proxy.ServeHTTP(bw, r)
-		if lastErr == nil {
+		failed := lastErr != nil || isChannelError(bw.status)
+		if !failed {
+			markChannelSuccess(t.channel.ID)
 			respStatus = bw.status
 			respHeader = bw.header
 			// 把响应里的上游模型名还原为公开名
 			respBody = rewriteResponseModel(bw.buf.Bytes(), upstream, modelName)
 			break
 		}
+		markChannelFailure(t.channel.ID)
 	}
 	if lastErr != nil {
 		http.Error(w, "Bad Gateway: "+lastErr.Error(), http.StatusBadGateway)
@@ -133,11 +189,12 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(respStatus)
 	_, _ = w.Write(respBody)
 
-	// 计费：优先用响应中的 usage.total_tokens，否则按字节估算
+	// 计费：优先用响应中的 usage.total_tokens，否则按字节估算；再按模式/倍率换算
 	cost := parseUsage(respBody)
 	if cost <= 0 {
 		cost = maxInt64(1, int64(len(respBody))/4)
 	}
+	cost = model.ModelCost(modelName, cost)
 	_ = model.UseToken(key, cost)
 
 	logAccess(map[string]interface{}{
@@ -201,7 +258,10 @@ func buildTargets(group, modelName string) []target {
 	all, _ := model.GetAllChannels()
 	var cands []model.Channel
 	for _, c := range all {
-		if c.Group != group || c.Status != 1 {
+		if !channelUsable(c) {
+			continue
+		}
+		if c.Group != group {
 			continue
 		}
 		if modelName != "" && !c.SupportsModel(modelName) {
