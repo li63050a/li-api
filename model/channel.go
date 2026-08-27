@@ -23,6 +23,7 @@ type Channel struct {
 	AuthType  string `json:"auth_type"`  // bearer / header / query
 	AuthKey   string `json:"auth_key"`   // header / query 的键名
 	Models    string `json:"models"`     // 支持的模型，逗号分隔，"*" 表示全部
+	ModelMapping string `json:"model_mapping"` // 模型名映射 JSON：{"公开名":"上游名"}
 	Group     string `json:"group"`      // 分组（令牌与渠道通过分组关联）
 	Priority  int    `json:"priority"`   // 优先级，越大越优先
 	Weight    int    `json:"weight"`     // 同优先级内的权重（负载比例）

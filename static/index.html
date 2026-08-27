@@ -71,6 +71,7 @@
             <select id="cAuthType"><option value="bearer">Bearer</option><option value="header">Header</option><option value="query">Query</option></select>
             <input id="cAuthKey" placeholder="认证键" />
             <input id="cModels" placeholder="支持模型(逗号/*)" value="*" />
+            <input id="cModelMap" placeholder='模型映射 JSON {"公开名":"上游名"}' />
             <input id="cGroup" placeholder="分组" value="default" />
             <input id="cPriority" type="number" placeholder="优先级" value="0" />
             <input id="cWeight" type="number" placeholder="权重" value="1" />
@@ -146,7 +147,8 @@
     }
     async function addChannel() {
         const data = { name: v('cName'), type: v('cType'), base_url: v('cBaseURL'), keys: v('cKeys'),
-            auth_type: v('cAuthType'), auth_key: v('cAuthKey'), models: v('cModels'), group: v('cGroup'),
+            auth_type: v('cAuthType'), auth_key: v('cAuthKey'), models: v('cModels'), model_mapping: v('cModelMap'),
+            group: v('cGroup'),
             priority: parseInt(v('cPriority'))||0, weight: parseInt(v('cWeight'))||1,
             rate_limit: parseInt(v('cRateLimit'))||0, status: document.getElementById('cStatus').checked?1:0 };
         await fetch('/admin/channels' + adminToken(), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });

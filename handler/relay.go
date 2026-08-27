@@ -74,6 +74,10 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		// 流式：实时转发，不缓冲（不做跨渠道故障转移）
 		cw := newCountWriter(w)
 		t := targets[0]
+		upstream := applyModelMapping(t.channel, modelName)
+		nb := rewriteModel(bodyBuf, upstream)
+		r.Body = io.NopCloser(bytes.NewReader(nb))
+		r.ContentLength = int64(len(nb))
 		proxy := buildForwardProxy(r, t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			lastErr = err
@@ -96,6 +100,11 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	var respStatus int
 	var respHeader http.Header
 	for _, t := range targets {
+		// 按渠道的模型映射重写请求中的 model
+		upstream := applyModelMapping(t.channel, modelName)
+		nb := rewriteModel(bodyBuf, upstream)
+		r.Body = io.NopCloser(bytes.NewReader(nb))
+		r.ContentLength = int64(len(nb))
 		bw := &bufferWriter{buf: &bytes.Buffer{}}
 		proxy := buildForwardProxy(r, t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -105,7 +114,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		if lastErr == nil {
 			respStatus = bw.status
 			respHeader = bw.header
-			respBody = bw.buf.Bytes()
+			// 把响应里的上游模型名还原为公开名
+			respBody = rewriteResponseModel(bw.buf.Bytes(), upstream, modelName)
 			break
 		}
 	}
@@ -136,6 +146,54 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		"status": respStatus, "stream": false, "cost": cost,
 		"duration": time.Since(start).Milliseconds(),
 	})
+}
+
+// applyModelMapping 根据渠道的模型映射，把公开模型名转换为上游模型名
+func applyModelMapping(ch model.Channel, modelName string) string {
+	if ch.ModelMapping == "" {
+		return modelName
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(ch.ModelMapping), &m); err != nil {
+		return modelName
+	}
+	if v, ok := m[modelName]; ok && v != "" {
+		return v
+	}
+	return modelName
+}
+
+// rewriteModel 把请求体中的 model 字段改写为指定名称
+func rewriteModel(body []byte, modelName string) []byte {
+	var m map[string]interface{}
+	if err := json.Unmarshal(body, &m); err != nil {
+		return body
+	}
+	m["model"] = modelName
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// rewriteResponseModel 把响应体中的上游模型名还原为公开模型名
+func rewriteResponseModel(body []byte, from, to string) []byte {
+	if from == to {
+		return body
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(body, &m); err != nil {
+		return body
+	}
+	if m["model"] == from {
+		m["model"] = to
+		out, err := json.Marshal(m)
+		if err == nil {
+			return out
+		}
+	}
+	return body
 }
 
 // buildTargets 选出分组内支持该模型的渠道，按优先级+权重排序，并展开多密钥
