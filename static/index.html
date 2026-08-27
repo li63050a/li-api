@@ -61,6 +61,7 @@
             <button id="tabUsers" onclick="showTab('users')" style="display:none">用户</button>
             <button id="tabRedemption" onclick="showTab('redemption')" style="display:none">充值码</button>
             <button id="tabLogs" onclick="showTab('logs')" style="display:none">日志</button>
+            <button id="tabExt" onclick="showTab('ext')" style="display:none">扩展</button>
         </div>
 
         <div id="routes" class="panel active">
@@ -203,6 +204,19 @@
             <table><thead><tr><th>时间</th><th>方法</th><th>路径</th><th>模型</th><th>分组</th><th>令牌</th><th>状态</th><th>Token</th><th>耗时(ms)</th></tr></thead>
                 <tbody id="logTable"></tbody></table>
         </div>
+
+        <div id="ext" class="panel">
+            <div class="tabs" id="extTabs">
+                <button class="active" onclick="loadExt('feat_usage')">用量统计</button>
+                <button onclick="loadExt('feat_site')">站点设置</button>
+                <button onclick="loadExt('feat_models')">模型价格</button>
+                <button onclick="loadExt('feat_audit')">审计日志</button>
+                <button onclick="loadExt('feat_batchtoken')">批量令牌</button>
+                <button onclick="loadExt('feat_channelhealth')">渠道健康</button>
+                <button onclick="loadExt('feat_billing')">账单记录</button>
+            </div>
+            <iframe id="extFrame" style="width:100%;height:680px;border:0;background:#fff;border-radius:0 8px 8px 8px"></iframe>
+        </div>
     </div>
 </div>
 <script>
@@ -239,7 +253,7 @@
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='block';
         document.getElementById('who').textContent = '当前用户：'+d.username + (d.role==='root'?'（管理员）':'');
-        if(d.role==='root'){ document.getElementById('tabSetting').style.display=''; document.getElementById('tabUsers').style.display=''; document.getElementById('tabRedemption').style.display=''; document.getElementById('tabLogs').style.display=''; }
+        if(d.role==='root'){ document.getElementById('tabSetting').style.display=''; document.getElementById('tabUsers').style.display=''; document.getElementById('tabRedemption').style.display=''; document.getElementById('tabLogs').style.display=''; document.getElementById('tabExt').style.display=''; }
         document.getElementById('tabDashboard').style.display='';
         loadRoutes();
     }
@@ -253,7 +267,13 @@
         if(id==='routes') loadRoutes(); else if(id==='channels') loadChannels();
         else if(id==='tokens') loadTokens(); else if(id==='settings') loadSetting();
         else if(id==='dashboard') loadDashboard(); else if(id==='users') loadUsers();
-        else if(id==='redemption') loadRedemptions(); else if(id==='logs') loadLogs();
+        else if(id==='redemption') loadRedemptions();         else if(id==='logs') loadLogs();
+        else if(id==='ext') loadExt('feat_usage');
+    }
+    function loadExt(name){
+        document.querySelectorAll('#extTabs button').forEach(b=>b.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('extFrame').src='/' + name + '.html';
     }
 
     async function loadRoutes(){ const res=await api('/admin/routes'); const rs=await res.json();

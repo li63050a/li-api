@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>渠道健康监控</title>
+  <link rel="stylesheet" href="/common.css">
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>渠道健康监控</h2>
+        <button class="btn" onclick="loadHealth()">刷新</button>
+      </div>
+      <p class="muted">向每个渠道的 <code>/v1/models</code> 发起 3 秒超时探测，检测可达性与延迟。</p>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>名称</th>
+            <th>分组</th>
+            <th>状态</th>
+            <th>HTTP 状态</th>
+            <th>延迟(ms)</th>
+            <th>错误</th>
+          </tr>
+        </thead>
+        <tbody id="healthBody">
+          <tr><td colspan="7" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script>
+    async function loadHealth() {
+      const tb = $('healthBody');
+      tb.innerHTML = '<tr><td colspan="7" class="muted">加载中…</td></tr>';
+      try {
+        const r = await api('/api/feat/channels/health');
+        if (!r.ok) {
+          tb.innerHTML = '<tr><td colspan="7" class="muted">获取失败（' + r.status + '）</td></tr>';
+          return;
+        }
+        const data = await r.json();
+        const list = data.channels || [];
+        if (list.length === 0) {
+          tb.innerHTML = '<tr><td colspan="7" class="muted">暂无渠道</td></tr>';
+          return;
+        }
+        tb.innerHTML = list.map(c => {
+          const on = c.status === '启用';
+          const badge = '<span class="status-' + (on ? 'on' : 'off') + '">' + escapeHtml(c.status) + '</span>';
+          const http = c.http_status ? String(c.http_status) : '—';
+          const err = c.error ? escapeHtml(c.error) : '—';
+          return `<tr>
+            <td>${c.id}</td>
+            <td>${escapeHtml(c.name)}</td>
+            <td>${escapeHtml(c.group)}</td>
+            <td>${badge}</td>
+            <td>${http}</td>
+            <td>${c.latency_ms != null ? c.latency_ms : '—'}</td>
+            <td>${err}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tb.innerHTML = '<tr><td colspan="7" class="muted">请求错误</td></tr>';
+      }
+    }
+
+    (async () => {
+      try { await ensureAuth(); } catch (e) { return; }
+      await loadHealth();
+    })();
+  </script>
+</body>
+</html>

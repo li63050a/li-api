@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>站点设置</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .preview { background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+    .preview img { max-height: 60px; margin-bottom: 8px; }
+    .preview h3 { margin: 6px 0; }
+    .preview p { margin: 6px 0; white-space: pre-wrap; }
+    .readonly { background: #f1f5f9; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>站点设置</h2>
+    <button class="btn btn-dark" onclick="location.href='/index.html'">返回</button>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="form-group">
+      <label style="flex:0 0 120px">站点名称</label>
+      <input id="name" placeholder="站点名称">
+    </div>
+    <div class="form-group">
+      <label style="flex:0 0 120px">站点描述</label>
+      <input id="description" placeholder="站点描述">
+    </div>
+    <div class="form-group">
+      <label style="flex:0 0 120px">Logo URL</label>
+      <input id="logo" placeholder="https://.../logo.png">
+    </div>
+    <div class="form-group">
+      <label style="flex:0 0 120px">页脚信息</label>
+      <input id="footer" placeholder="© 2026 ...">
+    </div>
+    <div class="form-group" style="align-items:flex-start">
+      <label style="flex:0 0 120px">关于内容</label>
+      <textarea id="about" rows="5" placeholder="站点介绍 / 使用说明"></textarea>
+    </div>
+    <div class="form-group">
+      <button id="saveBtn" class="btn btn-success" onclick="saveSite()">保存</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+
+  <h3>当前配置预览</h3>
+  <div id="preview" class="preview"><p style="color:#718096">加载中…</p></div>
+</div>
+
+<script>
+let isRoot = false;
+
+async function loadSite() {
+  const r = await api('/api/feat/site');
+  if (!r.ok) { $('preview').innerHTML = '<p style="color:#e53e3e">加载失败</p>'; return; }
+  const s = await r.json();
+  $('name').value = s.name || '';
+  $('description').value = s.description || '';
+  $('logo').value = s.logo || '';
+  $('footer').value = s.footer || '';
+  $('about').value = s.about || '';
+  renderPreview(s);
+}
+
+function renderPreview(s) {
+  let html = '';
+  if (s.logo) html += `<img src="${escapeHtml(s.logo)}" alt="logo">`;
+  html += `<h3>${escapeHtml(s.name) || '(未设置名称)'}</h3>`;
+  if (s.description) html += `<p>${escapeHtml(s.description)}</p>`;
+  if (s.about) html += `<p>${escapeHtml(s.about)}</p>`;
+  if (s.footer) html += `<p style="color:#718096;font-size:12px">${escapeHtml(s.footer)}</p>`;
+  $('preview').innerHTML = html;
+}
+
+async function saveSite() {
+  $('msg').textContent = '';
+  if (!isRoot) { $('msg').textContent = '无权限：仅 root 可保存'; return; }
+  const cfg = {
+    name: v('name'), description: v('description'),
+    logo: v('logo'), footer: v('footer'), about: v('about')
+  };
+  const r = await api('/api/feat/site', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg)
+  });
+  if (r.ok) {
+    $('msg').style.color = '#38a169';
+    $('msg').textContent = '已保存';
+    renderPreview(cfg);
+  } else {
+    $('msg').textContent = '保存失败：' + r.status;
+  }
+}
+
+(async () => {
+  try {
+    const me = await ensureAuth();
+    isRoot = me.role === 'root';
+    if (!isRoot) {
+      $('saveBtn').disabled = true;
+      $('saveBtn').classList.add('readonly');
+      $('msg').textContent = '提示：当前账号无保存权限（需 root）';
+    }
+    await loadSite();
+    renderPreview({
+      name: v('name'), description: v('description'),
+      logo: v('logo'), footer: v('footer'), about: v('about')
+    });
+  } catch (e) { /* ensureAuth 已处理未登录 */ }
+})();
+</script>
+</body>
+</html>

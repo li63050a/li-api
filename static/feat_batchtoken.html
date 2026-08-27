@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>令牌批量生成</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>令牌批量生成</h2>
+    <button class="btn btn-dark" onclick="logout()">退出</button>
+  </div>
+
+  <div class="card">
+    <div class="form-group">
+      <input id="count" type="number" min="1" max="100" value="5" placeholder="数量 (1-100)">
+      <input id="name_prefix" type="text" placeholder="名称前缀">
+      <input id="group" type="text" placeholder="分组 (默认 default)">
+    </div>
+    <div class="form-group">
+      <input id="quota" type="number" value="100" placeholder="额度 (-1 表示不限)">
+      <input id="models" type="text" placeholder="允许模型 (逗号分隔, 留空全部)">
+      <input id="expired_at" type="datetime-local" placeholder="过期时间">
+    </div>
+    <div class="form-group">
+      <button class="btn btn-primary" id="submitBtn" onclick="submitBatch()">生成</button>
+      <button class="btn btn-success" id="exportBtn" style="display:none" onclick="exportJSON()">导出 JSON</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+let lastResult = null;
+
+function toRFC3339(localStr) {
+  if (!localStr) return "";
+  // datetime-local 为 "YYYY-MM-DDTHH:MM"
+  const d = new Date(localStr);
+  if (isNaN(d.getTime())) return "";
+  return d.toISOString();
+}
+
+async function submitBatch() {
+  const msg = $("msg");
+  msg.textContent = "";
+  const count = parseInt($("count").value, 10);
+  if (!(count >= 1 && count <= 100)) {
+    msg.textContent = "数量必须在 1 到 100 之间";
+    return;
+  }
+  const body = {
+    count: count,
+    name_prefix: $("name_prefix").value.trim(),
+    group: $("group").value.trim(),
+    quota: parseInt($("quota").value, 10) || 0,
+    models: $("models").value.trim(),
+    expired_at: toRFC3339($("expired_at").value)
+  };
+  try {
+    const r = await api("/api/feat/tokens/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok || !data.success) {
+      msg.textContent = (data && data.error) ? data.error : "生成失败";
+      return;
+    }
+    lastResult = data;
+    renderTable(data.tokens);
+    $("exportBtn").style.display = "";
+  } catch (e) {
+    msg.textContent = "请求错误: " + e.message;
+  }
+}
+
+function renderTable(tokens) {
+  if (!tokens || !tokens.length) {
+    $("result").innerHTML = "";
+    return;
+  }
+  let html = '<table><thead><tr><th>密钥 (已脱敏)</th><th>名称</th><th>分组</th><th>额度</th><th>允许模型</th></tr></thead><tbody>';
+  for (const t of tokens) {
+    html += '<tr>' +
+      '<td><code>' + escapeHtml(maskTok(t.key)) + '</code></td>' +
+      '<td>' + escapeHtml(t.name) + '</td>' +
+      '<td>' + escapeHtml(t.group) + '</td>' +
+      '<td>' + escapeHtml(t.quota) + '</td>' +
+      '<td>' + escapeHtml(t.models || '') + '</td>' +
+      '</tr>';
+  }
+  html += '</tbody></table>';
+  $("result").innerHTML = html;
+}
+
+function exportJSON() {
+  if (!lastResult) return;
+  const blob = new Blob([JSON.stringify(lastResult, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "batch_tokens.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) {}
+})();
+</script>
+</body>
+</html>

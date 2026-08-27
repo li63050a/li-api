@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模型价格管理</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>模型价格管理</h2>
+    <div>
+      <button class="btn btn-primary" id="btn-add">新增一行</button>
+      <button class="btn btn-success" id="btn-save">保存</button>
+      <button class="btn btn-dark" id="btn-export">导出</button>
+      <button class="btn btn-warning" id="btn-import">导入</button>
+      <input type="file" id="file-import" accept="application/json,.json" style="display:none">
+      <a class="btn btn-dark" href="/index.html">返回</a>
+    </div>
+  </div>
+  <div class="card">
+    <p class="msg" id="msg"></p>
+    <table>
+      <thead>
+        <tr>
+          <th>模型名</th>
+          <th>ratio</th>
+          <th>completion_ratio</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+let isRoot = false;
+let editing = {};
+
+function showMsg(t, ok) {
+  const m = $('msg');
+  m.textContent = t;
+  m.style.color = ok ? '#38a169' : '#e53e3e';
+}
+
+async function load() {
+  const self = await ensureAuth();
+  isRoot = self.role === 'root';
+  if (!isRoot) {
+    showMsg('仅 root 可保存/导入，当前为只读模式', false);
+  }
+  $('btn-save').disabled = !isRoot;
+  $('btn-import').disabled = !isRoot;
+  $('btn-add').disabled = !isRoot;
+  const r = await api('/api/feat/models');
+  if (!r.ok) { showMsg('加载失败', false); return; }
+  editing = await r.json();
+  render();
+}
+
+function render() {
+  const tb = $('rows');
+  tb.innerHTML = '';
+  const keys = Object.keys(editing).sort();
+  for (const k of keys) {
+    const e = editing[k] || { ratio: 0, completion_ratio: 0 };
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input class="m-name" value="' + escapeHtml(k) + '" style="width:100%"></td>' +
+      '<td><input class="m-ratio" type="number" step="any" value="' + e.ratio + '" style="width:120px"></td>' +
+      '<td><input class="m-cr" type="number" step="any" value="' + e.completion_ratio + '" style="width:160px"></td>' +
+      '<td><button class="btn btn-danger m-del">删除</button></td>';
+    const nameInput = tr.querySelector('.m-name');
+    nameInput.addEventListener('input', () => {
+      const old = k;
+      const nv = nameInput.value;
+      if (nv !== old && nv !== '') {
+        const val = editing[old];
+        delete editing[old];
+        editing[nv] = val;
+        render();
+      }
+    });
+    tr.querySelector('.m-ratio').addEventListener('input', ev => {
+      editing[k].ratio = parseFloat(ev.target.value) || 0;
+    });
+    tr.querySelector('.m-cr').addEventListener('input', ev => {
+      editing[k].completion_ratio = parseFloat(ev.target.value) || 0;
+    });
+    tr.querySelector('.m-del').addEventListener('click', () => {
+      delete editing[k];
+      render();
+    });
+    tb.appendChild(tr);
+  }
+}
+
+$('btn-add').addEventListener('click', () => {
+  let base = 'new-model';
+  let name = base, i = 1;
+  while (name in editing) { name = base + '-' + (i++); }
+  editing[name] = { ratio: 1, completion_ratio: 1 };
+  render();
+});
+
+$('btn-save').addEventListener('click', async () => {
+  if (!isRoot) { showMsg('无权限', false); return; }
+  const r = await api('/api/feat/models', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(editing)
+  });
+  if (r.ok) { showMsg('已保存', true); }
+  else { showMsg('保存失败: ' + r.status, false); }
+});
+
+$('btn-export').addEventListener('click', () => {
+  window.location.href = '/api/feat/models/export';
+});
+
+$('btn-import').addEventListener('click', () => { $('file-import').click(); });
+
+$('file-import').addEventListener('change', async (ev) => {
+  if (!isRoot) { showMsg('无权限', false); return; }
+  const file = ev.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { showMsg('JSON 解析失败', false); return; }
+  const r = await api('/api/feat/models/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(obj)
+  });
+  if (r.ok) {
+    showMsg('导入成功', true);
+    await load();
+  } else {
+    showMsg('导入失败: ' + r.status, false);
+  }
+  ev.target.value = '';
+});
+
+load();
+</script>
+</body>
+</html>

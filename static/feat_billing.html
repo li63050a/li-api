@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>账单 / 额度变动</title>
+  <link rel="stylesheet" href="/common.css">
+  <style>
+    .adjust-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 14px 0; }
+    .adjust-form .field { display: flex; flex-direction: column; }
+    .adjust-form label { font-size: 12px; color: #718096; margin-bottom: 4px; }
+    .adjust-form input { padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }
+    .adjust-form .btn { height: 36px; }
+    .amount-pos { color: #2f855a; font-weight: 600; }
+    .amount-neg { color: #c53030; font-weight: 600; }
+    .type-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #edf2f7; color: #4a5568; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>账单 / 额度变动记录</h2>
+        <button class="btn" onclick="loadBilling()">刷新</button>
+      </div>
+
+      <div id="adjustBox" style="display:none">
+        <h3>调整额度</h3>
+        <div class="adjust-form">
+          <div class="field">
+            <label>用户</label>
+            <input id="adjUser" type="text" placeholder="用户名" />
+          </div>
+          <div class="field">
+            <label>变动量（可负）</label>
+            <input id="adjAmount" type="number" step="1" placeholder="如 100 或 -50" />
+          </div>
+          <div class="field">
+            <label>备注</label>
+            <input id="adjRemark" type="text" placeholder="可选" />
+          </div>
+          <button class="btn btn-primary" onclick="submitAdjust()">提交调整</button>
+        </div>
+        <p id="adjMsg" class="muted"></p>
+      </div>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>用户</th>
+            <th>类型</th>
+            <th>变动额度</th>
+            <th>余额</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody id="billingBody">
+          <tr><td colspan="6" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script>
+    async function loadBilling() {
+      const body = $('billingBody');
+      body.innerHTML = '<tr><td colspan="6" class="muted">加载中…</td></tr>';
+      try {
+        const r = await api('/api/feat/billing');
+        if (!r.ok) {
+          body.innerHTML = '<tr><td colspan="6" class="muted">获取失败</td></tr>';
+          return;
+        }
+        const data = await r.json();
+        const list = data.billings || [];
+        if (list.length === 0) {
+          body.innerHTML = '<tr><td colspan="6" class="muted">暂无记录</td></tr>';
+          return;
+        }
+        body.innerHTML = list.map(e => {
+          const amt = Number(e.amount || 0);
+          const amtCls = amt >= 0 ? 'amount-pos' : 'amount-neg';
+          const amtStr = (amt >= 0 ? '+' : '') + amt.toLocaleString();
+          return `<tr>
+            <td>${escapeHtml(e.time)}</td>
+            <td>${escapeHtml(e.user)}</td>
+            <td><span class="type-tag">${escapeHtml(e.type)}</span></td>
+            <td class="${amtCls}">${amtStr}</td>
+            <td>${Number(e.balance || 0).toLocaleString()}</td>
+            <td>${escapeHtml(e.remark)}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        body.innerHTML = '<tr><td colspan="6" class="muted">错误</td></tr>';
+      }
+    }
+
+    async function submitAdjust() {
+      const msg = $('adjMsg');
+      const user = v('adjUser').trim();
+      const amount = parseInt(v('adjAmount'), 10);
+      const remark = v('adjRemark').trim();
+      if (!user) { msg.textContent = '请填写用户'; return; }
+      if (isNaN(amount)) { msg.textContent = '变动量必须是数字'; return; }
+      msg.textContent = '提交中…';
+      try {
+        const r = await api('/api/feat/billing/adjust', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user, amount, remark })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data.success) {
+          msg.textContent = '调整成功，当前余额：' + Number(data.balance || 0).toLocaleString();
+          $('adjUser').value = '';
+          $('adjAmount').value = '';
+          $('adjRemark').value = '';
+          await loadBilling();
+        } else {
+          msg.textContent = '失败：' + (data.error || r.status);
+        }
+      } catch (e) {
+        msg.textContent = '请求失败';
+      }
+    }
+
+    (async () => {
+      try {
+        const me = await ensureAuth();
+        if (me && me.role === 'root') {
+          $('adjustBox').style.display = '';
+        }
+      } catch (e) { return; }
+      await loadBilling();
+    })();
+  </script>
+</body>
+</html>

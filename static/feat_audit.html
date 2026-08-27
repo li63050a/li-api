@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>审计日志</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h2>审计日志</h2>
+      <div>
+        <button class="btn btn-danger" id="clearBtn">清空日志</button>
+        <a class="btn btn-dark" href="/index.html">返回</a>
+      </div>
+    </div>
+    <div class="card">
+      <div class="msg" id="msg"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>操作者</th>
+            <th>动作</th>
+            <th>详情</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    (async function () {
+      let me;
+      try {
+        me = await ensureAuth();
+      } catch (e) {
+        return;
+      }
+      if (me.role !== 'root') {
+        document.body.innerHTML = '<p style="padding:24px">无权限：该页面仅限 root 用户访问。</p>';
+        return;
+      }
+
+      await load();
+
+      $('clearBtn').addEventListener('click', async () => {
+        if (!confirm('确定要清空全部审计日志吗？')) return;
+        const r = await api('/api/feat/audit/clear', { method: 'POST' });
+        if (!r.ok) {
+          $('msg').textContent = '清空失败：' + r.status;
+          return;
+        }
+        $('msg').textContent = '已清空';
+        await load();
+      });
+    })();
+
+    async function load() {
+      const r = await api('/api/feat/audit');
+      if (!r.ok) {
+        $('tbody').innerHTML = '<tr><td colspan="4">加载失败：' + r.status + '</td></tr>';
+        return;
+      }
+      const data = await r.json();
+      const audits = data.audits || [];
+      if (audits.length === 0) {
+        $('tbody').innerHTML = '<tr><td colspan="4">暂无记录</td></tr>';
+        return;
+      }
+      $('tbody').innerHTML = audits.map(a => {
+        return '<tr>' +
+          '<td>' + escapeHtml(fmtTime(a.time)) + '</td>' +
+          '<td>' + escapeHtml(a.actor) + '</td>' +
+          '<td>' + escapeHtml(a.action) + '</td>' +
+          '<td>' + escapeHtml(a.detail) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+  </script>
+</body>
+</html>

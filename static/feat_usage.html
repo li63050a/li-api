@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用量统计</title>
+  <link rel="stylesheet" href="/common.css">
+  <style>
+    .stat-cards { display: flex; gap: 14px; margin: 12px 0 20px; }
+    .stat-card { flex: 1; background: #fff; border-radius: 10px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+    .stat-title { color: #718096; font-size: 13px; margin-bottom: 6px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #2b6cb0; }
+    .ubar { height: 14px; background: #edf2f7; border-radius: 3px; overflow: hidden; min-width: 120px; }
+    .ubar-fill { height: 100%; background: #2b6cb0; border-radius: 3px; }
+    h3 { margin: 22px 0 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>用量统计</h2>
+        <button class="btn" onclick="loadUsage()">刷新</button>
+      </div>
+
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-title">今日总 Token</div>
+          <div class="stat-value" id="todayTokens">—</div>
+        </div>
+      </div>
+
+      <h3>各用户用量</h3>
+      <table class="table">
+        <thead>
+          <tr><th>用户名</th><th>已用 Token</th></tr>
+        </thead>
+        <tbody id="perUserBody">
+          <tr><td colspan="2" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+
+      <h3>热门模型 Top10</h3>
+      <table class="table">
+        <thead>
+          <tr><th>模型</th><th>Token 数</th><th></th></tr>
+        </thead>
+        <tbody id="topModelsBody">
+          <tr><td colspan="3" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script>
+    async function loadUsage() {
+      const tEl = $('todayTokens');
+      const pu = $('perUserBody');
+      const tm = $('topModelsBody');
+      tEl.textContent = '加载中…';
+      pu.innerHTML = '<tr><td colspan="2" class="muted">加载中…</td></tr>';
+      tm.innerHTML = '<tr><td colspan="3" class="muted">加载中…</td></tr>';
+      try {
+        const r = await api('/api/feat/usage');
+        if (!r.ok) {
+          tEl.textContent = '获取失败';
+          return;
+        }
+        const data = await r.json();
+        tEl.textContent = Number(data.today_tokens || 0).toLocaleString();
+
+        if (!data.per_user || data.per_user.length === 0) {
+          pu.innerHTML = '<tr><td colspan="2" class="muted">暂无数据</td></tr>';
+        } else {
+          pu.innerHTML = data.per_user.map(u =>
+            `<tr><td>${escapeHtml(u.username)}</td><td>${Number(u.used || 0).toLocaleString()}</td></tr>`
+          ).join('');
+        }
+
+        if (!data.top_models || data.top_models.length === 0) {
+          tm.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
+        } else {
+          const max = Math.max.apply(null, data.top_models.map(m => m.tokens || 0)) || 1;
+          tm.innerHTML = data.top_models.map(m => {
+            const v = Number(m.tokens || 0);
+            const pct = Math.round(v / max * 100);
+            return `<tr>
+              <td>${escapeHtml(m.model)}</td>
+              <td>${v.toLocaleString()}</td>
+              <td><div class="ubar"><div class="ubar-fill" style="width:${pct}%"></div></div></td>
+            </tr>`;
+          }).join('');
+        }
+      } catch (e) {
+        tEl.textContent = '错误';
+      }
+    }
+
+    (async () => {
+      try { await ensureAuth(); } catch (e) { return; }
+      await loadUsage();
+    })();
+  </script>
+</body>
+</html>
