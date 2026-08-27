@@ -14,8 +14,8 @@ import (
 //go:embed static
 var staticFS embed.FS
 
-// Version 当前版本号（提交时递增）
-const Version = "v1.5.0"
+// Version 当前版本号（按 0.0.0.x 依次递增）
+const Version = "0.0.0.3"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -90,6 +90,8 @@ func main() {
 	http.HandleFunc("/api/dashboard", handler.DashboardHandler)
 	http.HandleFunc("/api/model_presets", handler.ModelPresetsHandler)
 	http.HandleFunc("/api/redemption/redeem", handler.RedeemHandler)
+	http.HandleFunc("/api/logs", handler.LogsHandler)
+	http.HandleFunc("/api/setting/test_email", handler.TestEmailHandler)
 
 	// 管理 API
 	http.HandleFunc("/admin/routes", handler.AdminHandler)

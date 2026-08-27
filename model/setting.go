@@ -13,6 +13,12 @@ type Setting struct {
 	OpenRegister     bool               `json:"open_register"`      // 是否允许公开注册
 	ModelRatio       map[string]float64 `json:"model_ratio"`        // 提示词倍率（营业计费用）
 	CompletionRatio  map[string]float64 `json:"completion_ratio"`   // 补全词倍率（营业计费用，缺省时取 ModelRatio）
+	SMTPHost         string             `json:"smtp_host"`          // SMTP 服务器
+	SMTPPort         int                `json:"smtp_port"`          // SMTP 端口
+	SMTPUser         string             `json:"smtp_user"`          // SMTP 用户名
+	SMTPPass         string             `json:"smtp_pass"`          // SMTP 密码
+	SMTPFrom         string             `json:"smtp_from"`          // 发件人
+	NotifyEmail      string             `json:"notify_email"`       // 通知接收邮箱
 }
 
 var (
@@ -85,6 +91,24 @@ func UpdateSetting(patch Setting) Setting {
 	}
 	if patch.CompletionRatio != nil {
 		setting.CompletionRatio = patch.CompletionRatio
+	}
+	if patch.SMTPHost != "" {
+		setting.SMTPHost = patch.SMTPHost
+	}
+	if patch.SMTPPort != 0 {
+		setting.SMTPPort = patch.SMTPPort
+	}
+	if patch.SMTPUser != "" {
+		setting.SMTPUser = patch.SMTPUser
+	}
+	if patch.SMTPPass != "" {
+		setting.SMTPPass = patch.SMTPPass
+	}
+	if patch.SMTPFrom != "" {
+		setting.SMTPFrom = patch.SMTPFrom
+	}
+	if patch.NotifyEmail != "" {
+		setting.NotifyEmail = patch.NotifyEmail
 	}
 	settingMu.Unlock()
 	_ = saveSettings()

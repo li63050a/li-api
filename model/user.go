@@ -21,6 +21,7 @@ type User struct {
 	Status       int    `json:"status"`        // 1 启用 0 禁用
 	Quota        int64  `json:"quota"`         // 额度（token 数），-1 表示不限
 	Used         int64  `json:"used"`          // 已消耗
+	RateLimit    int    `json:"rate_limit"`    // 每分钟请求数限制，0 不限
 }
 
 // Session 登录会话
@@ -183,6 +184,7 @@ func UpdateUser(id int, patch User) error {
 			}
 			users[i].Status = patch.Status
 			users[i].Quota = patch.Quota
+			users[i].RateLimit = patch.RateLimit
 			return saveUsers()
 		}
 	}

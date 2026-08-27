@@ -60,6 +60,7 @@
             <button id="tabSetting" onclick="showTab('settings')" style="display:none">设置</button>
             <button id="tabUsers" onclick="showTab('users')" style="display:none">用户</button>
             <button id="tabRedemption" onclick="showTab('redemption')" style="display:none">充值码</button>
+            <button id="tabLogs" onclick="showTab('logs')" style="display:none">日志</button>
         </div>
 
         <div id="routes" class="panel active">
@@ -98,7 +99,8 @@
                 <button class="btn btn-success" onclick="addChannel()">添加</button>
                 <button class="btn btn-primary" onclick="loadChannels()">刷新</button>
             </div>
-            <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
+            <div id="groupOverview" style="margin:8px 0;color:#4a5568;font-size:13px"></div>
+            <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>权重</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
                 <tbody id="channelTable"></tbody></table>
         </div>
 
@@ -111,7 +113,10 @@
                 <input id="tExpiredAt" type="datetime-local" placeholder="过期时间(留空=永不过期)" />
                 <input id="tModels" placeholder="允许模型(逗号分隔,留空=全部)" />
                 <button class="btn btn-success" onclick="addToken()">生成令牌</button>
+                <button id="tUpdateBtn" class="btn btn-warning" style="display:none" onclick="updateToken()">更新令牌</button>
                 <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
+                <button class="btn btn-dark" onclick="exportTokens()">批量导出</button>
+                <span id="editHint" style="color:#2b6cb0"></span>
             </div>
             <table><thead><tr><th>Key</th><th>名称</th><th>分组</th><th>模型</th><th>已用/额度</th><th>过期</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tokenTable"></tbody></table>
@@ -130,6 +135,22 @@
                 <span>生成倍率(JSON，营业模式 completion 计费用):</span>
                 <input id="sCompRatio" style="flex-basis:100%" placeholder='{"gpt-4o":2,"claude":3}' />
             </div>
+            <details style="margin:8px 0">
+                <summary style="cursor:pointer">SMTP / 通知设置</summary>
+                <div class="form-group">
+                    <input id="sSmtpHost" placeholder="SMTP 服务器" />
+                    <input id="sSmtpPort" type="number" placeholder="端口(如 587)" value="587" />
+                </div>
+                <div class="form-group">
+                    <input id="sSmtpUser" placeholder="SMTP 用户名" />
+                    <input id="sSmtpPass" type="password" placeholder="SMTP 密码" />
+                </div>
+                <div class="form-group">
+                    <input id="sSmtpFrom" placeholder="发件人(留空=用户名)" />
+                    <input id="sNotifyEmail" placeholder="通知接收邮箱" />
+                    <button class="btn btn-dark" onclick="testEmail()">发送测试邮件</button>
+                </div>
+            </details>
             <button class="btn btn-success" onclick="saveSetting()">保存设置</button>
             <button class="btn btn-primary" onclick="loadSetting()">刷新</button>
             <button class="btn btn-dark" onclick="loadPresets()">加载预设价格</button>
@@ -146,6 +167,7 @@
                 <input id="uPwd" type="password" placeholder="密码" />
                 <select id="uRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
                 <input id="uQuota" type="number" placeholder="额度(token, -1 不限)" value="-1" />
+                <input id="uRate" type="number" placeholder="每分钟限流(0=不限)" value="0" />
                 <button class="btn btn-success" onclick="addUser()">创建用户</button>
                 <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
             </div>
@@ -168,6 +190,18 @@
                 <input id="redeemCode" placeholder="输入充值码兑换额度" />
                 <button class="btn btn-dark" onclick="redeemCode()">兑换</button>
             </div>
+        </div>
+
+        <div id="logs" class="panel">
+            <div class="form-group">
+                <input id="logModel" placeholder="按模型筛选" />
+                <input id="logStatus" placeholder="按状态码筛选" />
+                <input id="logGroup" placeholder="按分组筛选" />
+                <button class="btn btn-primary" onclick="loadLogs()">查询</button>
+                <span id="logPager"></span>
+            </div>
+            <table><thead><tr><th>时间</th><th>方法</th><th>路径</th><th>模型</th><th>分组</th><th>令牌</th><th>状态</th><th>Token</th><th>耗时(ms)</th></tr></thead>
+                <tbody id="logTable"></tbody></table>
         </div>
     </div>
 </div>
@@ -205,7 +239,7 @@
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='block';
         document.getElementById('who').textContent = '当前用户：'+d.username + (d.role==='root'?'（管理员）':'');
-        if(d.role==='root'){ document.getElementById('tabSetting').style.display=''; document.getElementById('tabUsers').style.display=''; document.getElementById('tabRedemption').style.display=''; }
+        if(d.role==='root'){ document.getElementById('tabSetting').style.display=''; document.getElementById('tabUsers').style.display=''; document.getElementById('tabRedemption').style.display=''; document.getElementById('tabLogs').style.display=''; }
         document.getElementById('tabDashboard').style.display='';
         loadRoutes();
     }
@@ -219,7 +253,7 @@
         if(id==='routes') loadRoutes(); else if(id==='channels') loadChannels();
         else if(id==='tokens') loadTokens(); else if(id==='settings') loadSetting();
         else if(id==='dashboard') loadDashboard(); else if(id==='users') loadUsers();
-        else if(id==='redemption') loadRedemptions();
+        else if(id==='redemption') loadRedemptions(); else if(id==='logs') loadLogs();
     }
 
     async function loadRoutes(){ const res=await api('/admin/routes'); const rs=await res.json();
@@ -236,10 +270,13 @@
 
     async function loadChannels(){ const res=await api('/admin/channels'); const cs=await res.json();
         document.getElementById('channelTable').innerHTML = cs.map(c=>`<tr><td>${c.id}</td><td>${c.name}</td><td>${c.type}</td><td>${c.base_url}</td>
-            <td>${c.models}</td><td>${c.group}</td><td>${c.priority}</td>
+            <td>${c.models}</td><td>${c.group}</td><td>${c.priority}</td><td>${c.weight}</td>
             <td><span class="status ${c.status?'status-on':'status-off'}">${c.status?'启用':'禁用'}</span></td>
             <td><button class="btn btn-primary" onclick="testChannel(${c.id})">测试</button></td>
-            <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join(''); }
+            <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join('');
+        const groups={};
+        cs.forEach(c=>{ (groups[c.group]=groups[c.group]||[]).push(c); });
+        document.getElementById('groupOverview').innerHTML='分组概览：'+Object.keys(groups).map(g=>`<b>${g}</b> [`+groups[g].map(c=>`${c.name}(w${c.weight},p${c.priority})`).join('、')+`]`).join('　'); }
     async function testChannel(id){ try{ const res=await api('/admin/channels/test/'+id,{method:'POST'}); const d=await res.json();
         alert('状态码: '+d.status+'\n结果: '+(d.success?'成功 ✓':'失败 ✗')+'\n'+(d.message||'')); }
         catch(e){ alert('测试请求出错: '+e); } }
@@ -250,13 +287,35 @@
         await api('/admin/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); loadChannels(); }
     async function deleteChannel(id){ if(!confirm('确认删除？'))return; await api('/admin/channels/'+id,{method:'DELETE'}); loadChannels(); }
 
-    async function loadTokens(){ const res=await api('/admin/tokens'); const ts=await res.json();
+    let tokenList=[];
+    async function loadTokens(){ const res=await api('/admin/tokens'); const ts=await res.json(); tokenList=ts;
         document.getElementById('tokenTable').innerHTML = ts.map(t=>`<tr><td><code>${t.key}</code></td><td>${t.name||'-'}</td><td>${t.group||'default'}</td>
             <td>${t.models||'全部'}</td>
             <td>${t.used} / ${t.unlimited?'不限':(t.quota<0?'不限':t.quota)}</td>
             <td>${t.expired_at?t.expired_at:'永久'}</td>
             <td><span class="status ${t.status?'status-on':'status-off'}">${t.status?'启用':'禁用'}</span></td>
-            <td><button class="btn btn-danger" onclick="deleteToken('${t.key}')">删除</button></td></tr>`).join(''); }
+            <td><button class="btn btn-primary" onclick="editToken('${t.key}')">编辑</button>
+            <button class="btn btn-danger" onclick="deleteToken('${t.key}')">删除</button></td></tr>`).join(''); }
+    let editingKey=null;
+    function isoToLocal(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; const p=n=>String(n).padStart(2,'0');
+        return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
+    function editToken(key){ const t=tokenList.find(x=>x.key===key); if(!t) return; editingKey=key;
+        document.getElementById('tName').value=t.name||''; document.getElementById('tGroup').value=t.group||'default';
+        document.getElementById('tQuota').value=t.unlimited?-1:(t.quota<0?-1:t.quota);
+        document.getElementById('tUnlimited').checked=t.unlimited===1; document.getElementById('tModels').value=t.models||'';
+        document.getElementById('tExpiredAt').value=isoToLocal(t.expired_at);
+        document.getElementById('tUpdateBtn').style.display=''; document.getElementById('editHint').textContent='编辑中：'+key.slice(0,8)+'…'; }
+    async function updateToken(){ if(!editingKey) return;
+        const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
+            quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
+            expired_at:exp?new Date(exp).toISOString():null, models:v('tModels'), status:1};
+        const res=await api('/admin/tokens/'+editingKey,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        if(!res.ok){ alert('更新失败：'+(await res.text())); return; }
+        editingKey=null; document.getElementById('tUpdateBtn').style.display='none'; document.getElementById('editHint').textContent='';
+        ['tName','tGroup','tModels','tExpiredAt'].forEach(i=>document.getElementById(i).value=''); loadTokens(); }
+    async function exportTokens(){ const res=await api('/admin/tokens'); const ts=await res.json();
+        const blob=new Blob([JSON.stringify(ts,null,2)],{type:'application/json'});
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='tokens.json'; a.click(); URL.revokeObjectURL(a.href); }
     async function addToken(){ const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
         quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
         expired_at:exp?new Date(exp).toISOString():null, models:v('tModels')};
@@ -267,12 +326,21 @@
     async function loadSetting(){ const res=await api('/api/setting'); if(!res.ok)return; const s=await res.json();
         document.getElementById('sMode').value=s.mode; document.getElementById('sOpenReg').checked=s.open_register;
         document.getElementById('sRatio').value=JSON.stringify(s.model_ratio||{});
-        document.getElementById('sCompRatio').value=JSON.stringify(s.completion_ratio||{}); }
+        document.getElementById('sCompRatio').value=JSON.stringify(s.completion_ratio||{});
+        document.getElementById('sSmtpHost').value=s.smtp_host||''; document.getElementById('sSmtpPort').value=s.smtp_port||587;
+        document.getElementById('sSmtpUser').value=s.smtp_user||''; document.getElementById('sSmtpPass').value=s.smtp_pass||'';
+        document.getElementById('sSmtpFrom').value=s.smtp_from||''; document.getElementById('sNotifyEmail').value=s.notify_email||''; }
     async function saveSetting(){ const data={mode:document.getElementById('sMode').value,
         open_register:document.getElementById('sOpenReg').checked,
         model_ratio:JSON.parse(document.getElementById('sRatio').value||'{}'),
-        completion_ratio:JSON.parse(document.getElementById('sCompRatio').value||'{}')};
+        completion_ratio:JSON.parse(document.getElementById('sCompRatio').value||'{}'),
+        smtp_host:document.getElementById('sSmtpHost').value, smtp_port:parseInt(document.getElementById('sSmtpPort').value)||587,
+        smtp_user:document.getElementById('sSmtpUser').value, smtp_pass:document.getElementById('sSmtpPass').value,
+        smtp_from:document.getElementById('sSmtpFrom').value, notify_email:document.getElementById('sNotifyEmail').value};
         await api('/api/setting',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); alert('已保存'); }
+    async function testEmail(){ const to=document.getElementById('sNotifyEmail').value;
+        const res=await api('/api/setting/test_email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to})});
+        const d=await res.json().catch(()=>({})); alert(d.message||(res.ok?'已发送':'发送失败')); }
 
     async function loadDashboard(){ const res=await api('/api/dashboard'); if(!res.ok)return; const d=await res.json();
         const cards=[['今日请求',d.today_requests],['今日 Token',d.today_tokens],['渠道总数',d.channels_total],
@@ -287,7 +355,7 @@
             <td>${u.used} / ${u.quota<0?'不限':u.quota}</td>
             <td><button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button>
             <button class="btn btn-primary" onclick="toggleUser(${u.id},${u.status?0:1})">${u.status?'禁用':'启用'}</button></td></tr>`).join(''); }
-    async function addUser(){ const data={username:v('uName'),password:v('uPwd'),role:v('uRole'),quota:parseInt(v('uQuota'))||-1};
+    async function addUser(){ const data={username:v('uName'),password:v('uPwd'),role:v('uRole'),quota:parseInt(v('uQuota'))||-1,rate_limit:parseInt(v('uRate'))||0};
         const res=await api('/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
         if(!res.ok){ alert('创建失败：'+(await res.text())); return; } loadUsers(); ['uName','uPwd'].forEach(i=>document.getElementById(i).value=''); }
     async function deleteUser(id){ if(!confirm('确认删除该用户？'))return; await api('/admin/users/'+id,{method:'DELETE'}); loadUsers(); }
@@ -303,6 +371,17 @@
     async function redeemCode(){ const code=v('redeemCode'); if(!code)return;
         const res=await api('/api/redemption/redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
         const d=await res.json(); alert(d.message||(res.ok?'兑换成功':'兑换失败')); document.getElementById('redeemCode').value=''; }
+
+    let logPage=1;
+    function maskTok(s){ if(!s) return ''; return s.length>8 ? s.slice(0,4)+'…'+s.slice(-4) : s; }
+    async function loadLogs(){ const m=document.getElementById('logModel').value, st=document.getElementById('logStatus').value, g=document.getElementById('logGroup').value;
+        const qs=new URLSearchParams({page:logPage,limit:50,model:m,status:st,group:g});
+        const res=await api('/api/logs?'+qs.toString()); if(!res.ok)return; const d=await res.json();
+        document.getElementById('logTable').innerHTML=d.logs.map(l=>`<tr><td>${l.time||''}</td><td>${l.method||''}</td><td>${l.path||''}</td><td>${l.model||''}</td><td>${l.group||''}</td><td>${maskTok(l.token)}</td><td>${l.status||''}</td><td>${l.cost||''}</td><td>${l.duration||''}</td></tr>`).join('');
+        const pages=Math.max(1,Math.ceil(d.total/d.limit||1));
+        document.getElementById('logPager').innerHTML=` 第${d.page}/${pages}页 共${d.total}条 `+
+            `<button class="btn btn-dark" onclick="logPage=Math.max(1,logPage-1);loadLogs()">上一页</button> `+
+            `<button class="btn btn-dark" onclick="logPage=Math.min(${pages},logPage+1);loadLogs()">下一页</button>`; }
 
     async function loadPresets(){ const res=await api('/api/model_presets'); if(!res.ok)return; const d=await res.json();
         document.getElementById('sRatio').value=JSON.stringify(d.model_ratio||{});

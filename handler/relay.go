@@ -30,6 +30,36 @@ var (
 	failCount    sync.Map // channelID -> *int64（连续失败计数）
 )
 
+// 按用户的分钟级请求限流（滑动窗口）
+var (
+	userLimitMu sync.Mutex
+	userReqWin  = map[string][]time.Time{}
+)
+
+func userRateAllowed(username string, limit int) bool {
+	if limit <= 0 || username == "" {
+		return true
+	}
+	userLimitMu.Lock()
+	defer userLimitMu.Unlock()
+	now := time.Now()
+	buf := userReqWin[username]
+	i := 0
+	for ; i < len(buf); i++ {
+		if now.Sub(buf[i]) < 60*time.Second {
+			break
+		}
+	}
+	buf = buf[i:]
+	if len(buf) >= limit {
+		userReqWin[username] = buf
+		return false
+	}
+	buf = append(buf, now)
+	userReqWin[username] = buf
+	return true
+}
+
 // channelUsable 判断渠道是否可用（启用且未被自动禁用冷却中）
 func channelUsable(c model.Channel) bool {
 	if c.Status != 1 {
@@ -57,6 +87,7 @@ func markChannelFailure(id int) {
 		autoDisabled.Store(id, time.Now())
 		failCount.Store(id, new(int64))
 		log.Printf("channel %d auto-disabled after %d consecutive failures", id, failureThreshold)
+		notifyChannelDisabled(id)
 	}
 }
 
@@ -89,6 +120,14 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	group := tok.Group
 	if group == "" {
 		group = "default"
+	}
+
+	// 用户级每分钟限流
+	if u, ok := model.GetUserByUsername(tok.Owner); ok {
+		if !userRateAllowed(tok.Owner, u.RateLimit) {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
 	}
 
 	// 读取 body 以提取 model / stream（之后会还原用于转发）
