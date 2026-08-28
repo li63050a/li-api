@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>订阅</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>订阅</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadAll()">刷新</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>当前用量</h3>
+    <div class="info-grid" id="usageBox"><div class="muted">加载中…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="panel-head">
+      <h3>套餐列表</h3>
+    </div>
+    <p id="msg" class="msg"></p>
+    <table>
+      <thead><tr><th>名称</th><th>额度 (token)</th><th>周期 (天)</th><th>操作</th></tr></thead>
+      <tbody id="planBody"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadPlans() {
+  const body = $('planBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/plans');
+    if (!r.ok) {
+      body.innerHTML = '<tr><td colspan="4" class="muted">获取失败（' + r.status + '）</td></tr>';
+      return;
+    }
+    const d = await r.json();
+    const plans = d.plans || [];
+    if (plans.length === 0) {
+      body.innerHTML = '<tr><td colspan="4" class="muted">暂无套餐</td></tr>';
+      return;
+    }
+    body.innerHTML = plans.map(p => `
+      <tr>
+        <td><b>${escapeHtml(p.name)}</b></td>
+        <td>${Number(p.quota || 0).toLocaleString()}</td>
+        <td>${escapeHtml(p.duration_days)} 天</td>
+        <td><button class="btn btn-primary" data-name="${escapeHtml(p.name)}" onclick="subscribe(this)">订阅</button></td>
+      </tr>`).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="4" class="muted">获取失败</td></tr>';
+  }
+}
+
+async function loadUsage() {
+  const box = $('usageBox');
+  box.innerHTML = '<div class="muted">加载中…</div>';
+  try {
+    const r = await api('/api/user/usage');
+    if (!r.ok) {
+      box.innerHTML = '<div class="muted">获取失败</div>';
+      return;
+    }
+    const u = await r.json();
+    const items = [
+      { k: '用户名', v: u.username },
+      { k: '分组', v: u.group },
+      { k: '额度 quota', v: u.quota < 0 ? '不限' : Number(u.quota).toLocaleString() },
+      { k: '已用 used', v: Number(u.used).toLocaleString() },
+      { k: '剩余 remaining', v: u.remaining < 0 ? '不限' : Number(u.remaining).toLocaleString() },
+      { k: '令牌数', v: u.token_count }
+    ];
+    box.innerHTML = items.map(i =>
+      '<div class="info-item"><div class="info-label">' + i.k + '</div><div class="info-value">' + escapeHtml(i.v) + '</div></div>'
+    ).join('');
+  } catch (e) {
+    box.innerHTML = '<div class="muted">获取失败</div>';
+  }
+}
+
+async function subscribe(el) {
+  const msg = $('msg');
+  const name = el.getAttribute('data-name');
+  msg.textContent = '订阅中…';
+  msg.style.color = 'var(--fg-2)';
+  try {
+    const r = await api('/api/plan/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.success) {
+      msg.textContent = '订阅成功，已发放额度 ' + Number(d.quota || 0).toLocaleString();
+      msg.style.color = 'var(--success)';
+      await loadUsage();
+    } else {
+      msg.textContent = '订阅失败：' + (d.error || d.message || ('HTTP ' + r.status));
+      msg.style.color = 'var(--danger)';
+    }
+  } catch (e) {
+    msg.textContent = '订阅失败';
+    msg.style.color = 'var(--danger)';
+  }
+}
+
+async function loadAll() {
+  await loadUsage();
+  await loadPlans();
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadAll();
+})();
+</script>
+</body>
+</html>
