@@ -11,16 +11,17 @@ import (
 
 // Setting 全局设置（仿 new-api：自用 / 营业）
 type Setting struct {
-	Mode             string             `json:"mode"`               // self 自用 | biz 营业
-	OpenRegister     bool               `json:"open_register"`      // 是否允许公开注册
-	ModelRatio       map[string]float64 `json:"model_ratio"`        // 提示词倍率（营业计费用）
-	CompletionRatio  map[string]float64 `json:"completion_ratio"`   // 补全词倍率（营业计费用，缺省时取 ModelRatio）
-	SMTPHost         string             `json:"smtp_host"`          // SMTP 服务器
-	SMTPPort         int                `json:"smtp_port"`          // SMTP 端口
-	SMTPUser         string             `json:"smtp_user"`          // SMTP 用户名
-	SMTPPass         string             `json:"smtp_pass"`          // SMTP 密码
-	SMTPFrom         string             `json:"smtp_from"`          // 发件人
-	NotifyEmail      string             `json:"notify_email"`       // 通知接收邮箱
+	Mode            string             `json:"mode"` // self 自用 | biz 营业
+	QuotaUnit       string             `json:"quota_unit"`
+	OpenRegister    bool               `json:"open_register"`    // 是否允许公开注册
+	ModelRatio      map[string]float64 `json:"model_ratio"`      // 提示词倍率（营业计费用）
+	CompletionRatio map[string]float64 `json:"completion_ratio"` // 补全词倍率（营业计费用，缺省时取 ModelRatio）
+	SMTPHost        string             `json:"smtp_host"`        // SMTP 服务器
+	SMTPPort        int                `json:"smtp_port"`        // SMTP 端口
+	SMTPUser        string             `json:"smtp_user"`        // SMTP 用户名
+	SMTPPass        string             `json:"smtp_pass"`        // SMTP 密码
+	SMTPFrom        string             `json:"smtp_from"`        // 发件人
+	NotifyEmail     string             `json:"notify_email"`     // 通知接收邮箱
 }
 
 var (
@@ -37,17 +38,17 @@ func InitSettings() error {
 		"SELECT id, mode, open_register, model_ratio, completion_ratio, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, notify_email FROM settings WHERE id = 1",
 	)
 	var (
-		id                int
-		mode              string
-		openRegister      int
-		modelRatio        string
-		completionRatio   string
-		smtpHost          string
-		smtpPort          int
-		smtpUser          string
-		smtpPass          string
-		smtpFrom          string
-		notifyEmail       string
+		id              int
+		mode            string
+		openRegister    int
+		modelRatio      string
+		completionRatio string
+		smtpHost        string
+		smtpPort        int
+		smtpUser        string
+		smtpPass        string
+		smtpFrom        string
+		notifyEmail     string
 	)
 	err := row.Scan(&id, &mode, &openRegister, &modelRatio, &completionRatio, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &notifyEmail)
 	if err != nil {
@@ -155,6 +156,9 @@ func GetSetting() Setting {
 	if s.CompletionRatio == nil {
 		s.CompletionRatio = map[string]float64{}
 	}
+	if s.QuotaUnit == "" {
+		s.QuotaUnit = "tokens"
+	}
 	return s
 }
 
@@ -189,6 +193,9 @@ func UpdateSetting(patch Setting) Setting {
 	if patch.NotifyEmail != "" {
 		setting.NotifyEmail = patch.NotifyEmail
 	}
+	if patch.QuotaUnit != "" {
+		setting.QuotaUnit = patch.QuotaUnit
+	}
 	settingMu.Unlock()
 	_ = saveSettings()
 	settingMu.RLock()
@@ -212,5 +219,9 @@ func ModelCost(modelName string, prompt, completion int64) int64 {
 	if cr <= 0 {
 		cr = r
 	}
-	return int64(float64(prompt)*r + float64(completion)*cr)
+	cost := int64(float64(prompt)*r + float64(completion)*cr)
+	if s.QuotaUnit == "units" {
+		cost *= 500000
+	}
+	return cost
 }

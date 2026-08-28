@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	schedulerOnce    sync.Once
-	schedulerMu      sync.Mutex
-	schedulerLastRun string // YYYY-MM-DD，当日日常任务已运行的日期
+	schedulerOnce      sync.Once
+	schedulerMu        sync.Mutex
+	schedulerLastRun   string // YYYY-MM-DD，当日日常任务已运行的日期
+	schedulerLastMonth string
 )
 
 // init 启动后台调度器（无需修改 main.go）
@@ -58,6 +59,22 @@ func runDailyTasksIfDue() {
 	subDailyGrant()
 	channelHealthPing()
 	statsSnapshot()
+	runMonthlyTaskIfDue()
+}
+
+func runMonthlyTaskIfDue() {
+	now := time.Now()
+	month := now.Format("2006-01")
+	if schedulerLastMonth == month {
+		return
+	}
+	schedulerLastMonth = month
+	firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	lastMonth := firstOfMonth.AddDate(0, -1, 0).Format("2006-01")
+	requests, cost := buildMonthlySummary(lastMonth)
+	if err := sendMonthlySummaryEmail(lastMonth, requests, cost); err != nil {
+		log.Printf("scheduler: monthly summary email: %v", err)
+	}
 }
 
 // findPlan 按名称查找套餐

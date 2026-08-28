@@ -69,6 +69,15 @@
 | 定时任务 | 套餐每日赠送 / 渠道健康巡检 / 日统计快照 |
 | 统计增强 | 14 天趋势 + 模型占比 + 状态码分布（`by_day`/`by_error`），费用明细页 |
 | 编排部署 | k8s.yaml（Deployment/Service/PVC/Ingress） |
+| API 兼容 | 错误统一为 OpenAI 风格 `{"error":{...}}`；`/v1/completions`；流式 `include_usage` 精确计费；流式响应模型名还原 |
+| 用户个人中心 | `/api/user/tokens` 令牌自助管理、会话列表/远程踢下线、2FA 恢复码、用量/套餐/充值一站式页面（console.html） |
+| 分组管理 | `/admin/groups` 分组 CRUD + 每组模型白名单/倍率，relay 自动按组限制模型 |
+| 请求详情 | 日志含请求/响应体预览（`req_preview`/`resp_preview`），前端可展开查看 |
+| 实时日志 | `/api/logs/stream`（SSE）实时推送访问日志到页面 |
+| 运营指标 | `/api/stats` 新增 `ops`（活跃用户/新用户/收入）与 `by_model_error`（错误按模型归因） |
+| 渠道成本 | `/api/stats/channels` 按渠道聚合请求/消耗 |
+| 额度单位 | `quota_unit`（tokens/units，units 模式 ×500000 对齐 new-api 计费单位） |
+| 发票/账单 | `/api/billing/invoice`（PDF）、`/admin/users/batch_recharge`（批量充值）、月度汇总邮件推送 |
 
 ---
 

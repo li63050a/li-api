@@ -59,6 +59,15 @@ type statsResult struct {
 	ByDay         []statsDay               `json:"by_day"`
 	Trend         []statsDay               `json:"trend"`
 	Recent        []map[string]interface{} `json:"recent"`
+	Ops           map[string]interface{}   `json:"ops"`
+	ByModelError  []statsModelError        `json:"by_model_error"`
+}
+
+// statsModelError 按模型+状态码聚合的结果项
+type statsModelError struct {
+	Model  string `json:"model"`
+	Status int    `json:"status"`
+	Count  int64  `json:"count"`
 }
 
 // statsError 按 HTTP 状态码聚合的结果项
@@ -227,6 +236,7 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 		ByChannel:   []statsChannel{},
 		ByUser:      []statsUser{},
 		ByError:     []statsError{},
+		ByModelError: []statsModelError{},
 		ByDay:       []statsDay{},
 		Trend:       []statsDay{},
 	}
@@ -235,6 +245,13 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 	userIdx := map[string]int{}
 	errIdx := map[int64]int64{}
 	dayIdx := map[string]*statsDay{}
+
+	type meKey struct {
+		model  string
+		status int64
+	}
+	meIdx := map[meKey]int64{}
+	var meOrder []meKey
 	var mNames []string
 	var mCosts []int64
 	var mCounts []int64
@@ -270,6 +287,14 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 			}
 			mCosts[i] += cost
 			mCounts[i]++
+
+			if _, has := e["status"]; has {
+				k := meKey{m, statsToInt(e["status"])}
+				if _, seen := meIdx[k]; !seen {
+					meOrder = append(meOrder, k)
+				}
+				meIdx[k]++
+			}
 		}
 
 		if c := statsToStr(e["upstream"]); c != "" {
@@ -312,6 +337,29 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 			d.Requests++
 			d.Cost += cost
 		}
+	}
+
+	res.Ops = map[string]interface{}{
+		"active_users": len(userIdx),
+		"new_users":    len(model.GetAllUsers()),
+		"revenue":      res.TotalCost,
+	}
+
+	sort.Slice(meOrder, func(i, j int) bool {
+		a, b := meOrder[i], meOrder[j]
+		if meIdx[a] != meIdx[b] {
+			return meIdx[a] > meIdx[b]
+		}
+		if a.model != b.model {
+			return a.model < b.model
+		}
+		return a.status < b.status
+	})
+	for i, k := range meOrder {
+		if i >= 10 {
+			break
+		}
+		res.ByModelError = append(res.ByModelError, statsModelError{Model: k.model, Status: int(k.status), Count: meIdx[k]})
 	}
 
 	// 最近 20 条，最新在前

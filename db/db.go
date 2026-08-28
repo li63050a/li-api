@@ -79,6 +79,7 @@ func Migrate() error {
 			quota BIGINT NOT NULL DEFAULT 0,
 			used BIGINT NOT NULL DEFAULT 0,
 			rate_limit INTEGER NOT NULL DEFAULT 0,
+			recovery_codes TEXT,
 			"group" TEXT,
 			avatar TEXT,
 			invited_by TEXT,
@@ -184,13 +185,14 @@ func Migrate() error {
 		return nil
 	}
 	if err := ensureCols("users", map[string]string{
-		"email":         "TEXT",
-		"twofa_secret":  "TEXT",
-		"twofa_enabled": "INTEGER NOT NULL DEFAULT 0",
-		"group":         "TEXT",
-		"avatar":        "TEXT",
-		"invited_by":    "TEXT",
-		"parent":        "TEXT",
+		"email":          "TEXT",
+		"twofa_secret":   "TEXT",
+		"twofa_enabled":  "INTEGER NOT NULL DEFAULT 0",
+		"recovery_codes": "TEXT",
+		"group":          "TEXT",
+		"avatar":         "TEXT",
+		"invited_by":     "TEXT",
+		"parent":         "TEXT",
 	}); err != nil {
 		return err
 	}

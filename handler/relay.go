@@ -148,20 +148,20 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	key := extractToken(r)
 	tok, err := model.GetToken(key)
 	if err != nil {
-		http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "Invalid API Key", "authentication_error")
 		return
 	}
 	if tok.IsExpired() {
-		http.Error(w, "Token Expired", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "Token Expired", "invalid_request_error")
 		return
 	}
 	if tok.Unlimited == 0 && tok.Quota >= 0 && tok.Used >= tok.Quota {
-		http.Error(w, "Quota Exceeded", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "Quota Exceeded", "insufficient_quota")
 		return
 	}
 	// 令牌所属用户的额度预检（仅记账，响应完成后统一累加）
 	if !model.UserQuotaAllowed(tok.Owner) {
-		http.Error(w, "User Quota Exceeded", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "User Quota Exceeded", "insufficient_quota")
 		return
 	}
 	// 令牌作用域：read 令牌仅允许 GET
@@ -186,7 +186,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	// 用户级每分钟限流
 	if u, ok := model.GetUserByUsername(tok.Owner); ok {
 		if !userRateAllowed(tok.Owner, u.RateLimit) {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			writeError(w, http.StatusTooManyRequests, "Too Many Requests", "rate_limit_error")
 			return
 		}
 	}
@@ -199,7 +199,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		wsModel = ResolveModel(wsModel)
 		wsTargets := buildTargets(group, wsModel)
 		if len(wsTargets) == 0 {
-			http.Error(w, "No available channel for model: "+wsModel, http.StatusBadGateway)
+			writeError(w, http.StatusBadGateway, "No available channel for model: "+wsModel, "server_error")
 			return
 		}
 		start := time.Now()
@@ -209,7 +209,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		proxy := buildForwardProxy(injectAzureAPIVersion(r, t.channel), t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			wsErr = err
-			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
+			writeError(w, http.StatusBadGateway, "Bad Gateway: "+err.Error(), "server_error")
 		}
 		proxy.ServeHTTP(cw, r)
 		if wsErr == nil && !isChannelError(cw.status) {
@@ -261,13 +261,13 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	modelName = ResolveRedirect(modelName)
 	modelName = ResolveModel(modelName)
 	if !model.TokenModelAllowed(tok.Models, modelName) {
-		http.Error(w, "Model not allowed for this token", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "Model not allowed for this token", "invalid_request_error")
 		return
 	}
 
 	targets := buildTargets(group, modelName)
 	if len(targets) == 0 {
-		http.Error(w, "No available channel for model: "+modelName, http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "No available channel for model: "+modelName, "server_error")
 		return
 	}
 
@@ -285,15 +285,22 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		proxy := buildForwardProxy(injectAzureAPIVersion(r, t.channel), t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			lastErr = err
-			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
+			writeError(w, http.StatusBadGateway, "Bad Gateway: "+err.Error(), "server_error")
 		}
-		proxy.ServeHTTP(cw, r)
+		// 保留最近 64KB 流式响应供 usage 解析，同时把上游模型名还原为公开名
+		tail := &tailBufferWriter{ResponseWriter: cw, max: streamTailBytes}
+		proxy.ServeHTTP(rewriteSSEModel(upstream, modelName)(tail), r)
 		if lastErr == nil && !isChannelError(cw.status) {
 			markChannelSuccess(t.channel.ID)
 		} else {
 			markChannelFailure(t.channel.ID)
 		}
-		cost := relayEndpointCost(r.URL.Path, bodyBuf, make([]byte, cw.bytes), modelName, "stream")
+		// 计费：优先解析 SSE 流中的 usage，缺失时按字节估算
+		prompt, comp := parseSSEUsage(tail.Bytes())
+		if prompt == 0 && comp == 0 {
+			prompt = maxInt64(1, cw.bytes/4)
+		}
+		cost := maxInt64(1, prompt+comp)
 		cost = model.ModelCost(modelName, cost, 0)
 		_ = model.UseToken(key, cost)
 		model.AddUserUsed(tok.Owner, cost)
@@ -302,7 +309,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
 			"model": modelName, "group": group, "token": maskToken(key),
 			"status": cw.status, "stream": true, "cost": cost,
-			"duration": time.Since(start).Milliseconds(),
+			"req_preview": string(bodyBuf[:min(1024, len(bodyBuf))]),
+			"duration":    time.Since(start).Milliseconds(),
 		})
 		return
 	}
@@ -335,7 +343,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		markChannelFailure(t.channel.ID)
 	}
 	if lastErr != nil {
-		http.Error(w, "Bad Gateway: "+lastErr.Error(), http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "Bad Gateway: "+lastErr.Error(), "server_error")
 		return
 	}
 
@@ -359,7 +367,9 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
 		"model": modelName, "group": group, "token": maskToken(key),
 		"status": respStatus, "stream": false, "cost": cost,
-		"duration": time.Since(start).Milliseconds(),
+		"req_preview":  string(bodyBuf[:min(1024, len(bodyBuf))]),
+		"resp_preview": string(respBody[:min(2048, len(respBody))]),
+		"duration":     time.Since(start).Milliseconds(),
 	})
 }
 
@@ -569,4 +579,110 @@ func serveModels(w http.ResponseWriter, group string) {
 		"object": "list",
 		"data":   data,
 	})
+}
+
+// streamTailBytes 流式响应保留的最大尾部长（用于解析 SSE usage）
+const streamTailBytes = 64 * 1024
+
+// tailBufferWriter 在透传写入的同时保留最近 max 字节，供从 SSE 流中解析 usage
+type tailBufferWriter struct {
+	http.ResponseWriter
+	max  int
+	tail []byte
+}
+
+func (t *tailBufferWriter) Write(b []byte) (int, error) {
+	if t.max > 0 {
+		if len(b) >= t.max {
+			t.tail = append(t.tail[:0], b[len(b)-t.max:]...)
+		} else {
+			t.tail = append(t.tail, b...)
+			if len(t.tail) > t.max {
+				t.tail = t.tail[len(t.tail)-t.max:]
+			}
+		}
+	}
+	return t.ResponseWriter.Write(b)
+}
+
+func (t *tailBufferWriter) WriteHeader(code int) {
+	t.ResponseWriter.WriteHeader(code)
+}
+
+func (t *tailBufferWriter) Flush() {
+	if f, ok := t.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Bytes 返回保留的最近一段响应数据
+func (t *tailBufferWriter) Bytes() []byte {
+	return t.tail
+}
+
+// parseSSEUsage 扫描 SSE 的 data: 行，解析其中 JSON 对象的 usage 字段（prompt/completion）
+func parseSSEUsage(b []byte) (prompt, comp int64) {
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(line[len("data:"):])
+		if len(payload) == 0 || string(payload) == "[DONE]" {
+			continue
+		}
+		var obj struct {
+			Usage struct {
+				PromptTokens     int64 `json:"prompt_tokens"`
+				CompletionTokens int64 `json:"completion_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(payload, &obj) != nil {
+			continue
+		}
+		if obj.Usage.PromptTokens > 0 || obj.Usage.CompletionTokens > 0 {
+			return obj.Usage.PromptTokens, obj.Usage.CompletionTokens
+		}
+	}
+	return 0, 0
+}
+
+// modelRewriteWriter 在每次 Write 时做字节级替换，把上游模型名改写为公开模型名（适配分块 SSE）
+type modelRewriteWriter struct {
+	w    http.ResponseWriter
+	from []byte
+	to   []byte
+}
+
+func (m *modelRewriteWriter) Header() http.Header {
+	return m.w.Header()
+}
+
+func (m *modelRewriteWriter) WriteHeader(code int) {
+	m.w.WriteHeader(code)
+}
+
+func (m *modelRewriteWriter) Write(b []byte) (int, error) {
+	if len(m.from) > 0 {
+		b = bytes.ReplaceAll(b, m.from, m.to)
+	}
+	return m.w.Write(b)
+}
+
+func (m *modelRewriteWriter) Flush() {
+	if f, ok := m.w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// rewriteSSEModel 返回一个包装函数：把响应流中的 "model":"<upstream>" 改写为 "model":"<public>"
+func rewriteSSEModel(upstream, public string) func(http.ResponseWriter) http.ResponseWriter {
+	if upstream == "" || upstream == public {
+		return func(w http.ResponseWriter) http.ResponseWriter { return w }
+	}
+	from := []byte(`"model":"` + upstream + `"`)
+	to := []byte(`"model":"` + public + `"`)
+	return func(w http.ResponseWriter) http.ResponseWriter {
+		return &modelRewriteWriter{w: w, from: from, to: to}
+	}
 }

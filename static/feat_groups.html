@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>分组管理</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .card { margin-bottom: 14px; }
+    .card h3 { margin-top: 0; }
+    .muted { color: #718096; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>分组管理</h2>
+    <button class="btn btn-primary" onclick="loadGroups()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>新增分组</h3>
+    <div class="form-group">
+      <input id="gName" placeholder="分组名">
+      <input id="gModels" placeholder="可用模型(逗号分隔,留空=全部)">
+      <input id="gRatio" type="number" step="0.01" placeholder="倍率(如 1.0)" value="1">
+      <button class="btn btn-success" onclick="addGroup()">添加</button>
+      <span id="gMsg" class="msg"></span>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>名称</th><th>模型</th><th>倍率</th><th>操作</th></tr></thead>
+    <tbody id="groupBody"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+function showMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.style.color = ok ? '#38a169' : '#e53e3e';
+}
+
+async function loadGroups() {
+  const body = $('groupBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  let list = [];
+  try {
+    const r = await api('/admin/groups');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="4" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    list = Array.isArray(d) ? d : (d.groups || []);
+  } catch (e) { body.innerHTML = '<tr><td colspan="4" class="msg">获取失败</td></tr>'; return; }
+  if (list.length === 0) { body.innerHTML = '<tr><td colspan="4" class="muted">暂无分组</td></tr>'; return; }
+  body.innerHTML = list.map(g => {
+    const ratio = g.ratio != null ? g.ratio : (g.price_ratio != null ? g.price_ratio : '1');
+    return `<tr>
+      <td><b>${escapeHtml(g.name)}</b></td>
+      <td>${escapeHtml(g.models || '全部')}</td>
+      <td>${escapeHtml(String(ratio))}</td>
+      <td><button class="btn btn-danger" onclick="deleteGroup('${escapeHtml(g.name)}')">删除</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function addGroup() {
+  const name = v('gName').trim();
+  if (!name) { showMsg('gMsg', '请填写分组名', false); return; }
+  const data = { name, models: v('gModels').trim(), ratio: parseFloat(v('gRatio')) || 1 };
+  const r = await api('/admin/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { showMsg('gMsg', '添加失败：' + (d.error || d.message || r.status), false); return; }
+  $('gName').value = '';
+  $('gModels').value = '';
+  showMsg('gMsg', '已添加', true);
+  loadGroups();
+}
+
+async function deleteGroup(name) {
+  if (!confirm('确认删除分组 ' + name + '？')) return;
+  const r = await api('/admin/groups?name=' + encodeURIComponent(name), { method: 'DELETE' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { showMsg('gMsg', '删除失败：' + (d.error || d.message || r.status), false); return; }
+  showMsg('gMsg', '已删除', true);
+  loadGroups();
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadGroups();
+})();
+</script>
+</body>
+</html>

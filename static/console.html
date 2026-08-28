@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人中心</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .card { margin-bottom: 14px; }
+    .card h3 { margin-top: 0; }
+    .info-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .info-item { flex: 1 1 150px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+    .info-label { color: #718096; font-size: 12px; margin-bottom: 4px; }
+    .info-value { font-size: 18px; font-weight: 700; color: #2b6cb0; word-break: break-all; }
+    .avatar { width: 56px; height: 56px; border-radius: 50%; background: #2b6cb0; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; flex: 0 0 auto; }
+    .ubar { height: 14px; background: #edf2f7; border-radius: 3px; overflow: hidden; min-width: 120px; }
+    .ubar-fill { height: 100%; background: #2b6cb0; border-radius: 3px; }
+    .muted { color: #718096; }
+    .small { font-size: 12px; color: #718096; }
+    .rec-code { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin: 2px 6px 2px 0; display: inline-block; }
+    .plan-row { display: flex; justify-content: space-between; align-items: center; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+    #trendCanvas { display: block; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>个人中心</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadAll()">刷新</button>
+      <button class="btn btn-dark" onclick="logout()">退出登录</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>基本信息</h3>
+    <div id="infoBox" class="muted">加载中…</div>
+    <div id="usageBox"></div>
+  </div>
+
+  <div class="card">
+    <h3>使用趋势</h3>
+    <div id="trendWrap" style="display:none"><canvas id="trendCanvas"></canvas></div>
+    <div id="trendMsg" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h3>我的令牌</h3>
+    <div class="form-group">
+      <input id="tkName" placeholder="名称/备注">
+      <input id="tkQuota" type="number" placeholder="额度(token, -1 不限)" value="-1">
+      <input id="tkModels" placeholder="允许模型(逗号分隔,留空=全部)">
+      <input id="tkGroup" placeholder="分组" value="default">
+      <button class="btn btn-success" onclick="createToken()">创建令牌</button>
+      <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
+    </div>
+    <table>
+      <thead><tr><th>名称</th><th>Key</th><th>分组</th><th>额度</th><th>已用</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="tokenBody"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>充值兑换</h3>
+    <div class="form-group">
+      <input id="redeemCode" placeholder="输入充值码">
+      <button class="btn btn-success" onclick="redeem()">兑换</button>
+      <span id="redeemMsg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>套餐订阅</h3>
+    <div id="planBox" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h3>双重认证 (2FA)</h3>
+    <div class="form-group">
+      <div style="flex:1 1 200px; display:flex; flex-direction:column">
+        <label class="small">用户名</label>
+        <input id="tfUser">
+      </div>
+      <button class="btn btn-success" onclick="enable2FA()">开启 2FA</button>
+      <button class="btn btn-danger" onclick="disable2FA()">关闭</button>
+      <span id="tfMsg" class="msg"></span>
+    </div>
+    <div id="tfSecretBox" style="display:none;margin:10px 0">
+      <p>密钥：<code id="tfSecret"></code></p>
+      <p class="small"><a id="tfOtpauth" href="#" target="_blank" rel="noopener"></a></p>
+    </div>
+    <div class="form-group">
+      <input id="tfCode" placeholder="6 位动态验证码">
+      <button class="btn btn-primary" onclick="confirm2FA()">确认开启</button>
+    </div>
+    <div id="recBox" style="display:none;margin-top:10px">
+      <p class="small">恢复码（请妥善保存，每个恢复码只能使用一次）：</p>
+      <div id="recList"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>我的会话</h3>
+    <table>
+      <thead><tr><th>令牌</th><th>用户</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody id="sessionBody"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let selfUser = '';
+let selfRole = '';
+
+function showMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.style.color = ok ? '#38a169' : '#e53e3e';
+}
+
+async function loadAll() {
+  try {
+    const me = await ensureAuth();
+    selfUser = me.username || '';
+    selfRole = me.role || '';
+  } catch (e) { return; }
+  $('tfUser').value = selfUser;
+  await loadUsage();
+  await loadTokens();
+  await loadPlans();
+  await loadSessions();
+  await loadRecoveryCodes();
+}
+
+async function loadUsage() {
+  const box = $('infoBox');
+  const ub = $('usageBox');
+  box.innerHTML = '<span class="muted">加载中…</span>';
+  ub.innerHTML = '';
+  let d = {};
+  try {
+    const r = await api('/api/user/usage');
+    if (!r.ok) { box.innerHTML = '<span class="msg">获取失败（' + r.status + '）</span>'; return; }
+    d = await r.json();
+  } catch (e) { box.innerHTML = '<span class="msg">获取失败</span>'; return; }
+  const u = d.user || d;
+  const uname = u.username || selfUser || '-';
+  const role = u.role || selfRole || '';
+  const group = u.group || 'default';
+  const email = u.email || '-';
+  const avatar = u.avatar || '';
+  const quota = Number(u.quota);
+  const used = Number(u.used || 0);
+  const remaining = u.remaining != null ? Number(u.remaining) : (quota < 0 ? -1 : Math.max(0, quota - used));
+  const tokenCount = u.token_count != null ? Number(u.token_count) : '-';
+  const roleLabel = role === 'root' ? '管理员' : (role || '普通用户');
+  const quotaTxt = quota < 0 ? '不限' : quota.toLocaleString();
+  const remainTxt = remaining < 0 ? '不限' : remaining.toLocaleString();
+  const pct = quota < 0 ? 100 : Math.min(100, Math.round(used / Math.max(1, quota) * 100));
+  box.innerHTML = `
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:12px">
+      ${avatar ? '<img src="' + escapeHtml(avatar) + '" class="avatar" style="object-fit:cover">'
+        : '<div class="avatar">' + escapeHtml((uname || '?').slice(0, 1).toUpperCase()) + '</div>'}
+      <div>
+        <div style="font-size:20px;font-weight:700">${escapeHtml(uname)}</div>
+        <div class="small">${escapeHtml(roleLabel)} · 分组 ${escapeHtml(group)} · 邮箱 ${escapeHtml(email)}</div>
+      </div>
+    </div>`;
+  ub.innerHTML = `<div class="info-grid">
+    <div class="info-item"><div class="info-label">额度</div><div class="info-value">${quotaTxt}</div></div>
+    <div class="info-item"><div class="info-label">已用</div><div class="info-value">${used.toLocaleString()}</div></div>
+    <div class="info-item"><div class="info-label">剩余</div><div class="info-value">${remainTxt}</div></div>
+    <div class="info-item"><div class="info-label">令牌数</div><div class="info-value">${escapeHtml(String(tokenCount))}</div></div>
+  </div>
+  <div class="ubar" style="margin-top:10px"><div class="ubar-fill" style="width:${pct}%"></div></div>`;
+  drawTrend(d.trend || d.by_day || d.daily);
+}
+
+function drawTrend(list) {
+  const wrap = $('trendWrap');
+  const msg = $('trendMsg');
+  if (!Array.isArray(list) || list.length === 0) {
+    wrap.style.display = 'none';
+    msg.innerHTML = '<span class="muted">暂无趋势数据</span>';
+    return;
+  }
+  const items = list.map(x => ({
+    label: String(x.day || x.date || x.label || ''),
+    v: Number(x.tokens != null ? x.tokens : (x.requests || x.used || x.count || 0))
+  })).slice(-14);
+  if (items.length === 0) { wrap.style.display = 'none'; msg.innerHTML = '<span class="muted">暂无趋势数据</span>'; return; }
+  wrap.style.display = '';
+  msg.innerHTML = '';
+  const cv = $('trendCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.parentNode.clientWidth || 800;
+  const h = 200;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const padL = 48, padR = 8, padT = 12, padB = 26;
+  const pw = w - padL - padR, ph = h - padT - padB;
+  const max = Math.max.apply(null, items.map(i => i.v)) || 1;
+  const n = items.length;
+  ctx.font = '10px sans-serif';
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + ph - (i / 4) * ph;
+    ctx.strokeStyle = '#edf2f7';
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = '#718096';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(max * i / 4).toLocaleString(), padL - 5, y);
+  }
+  const bw = Math.min(40, pw / n - 4);
+  items.forEach((it, i) => {
+    const x = padL + (i + 0.5) * (pw / n);
+    const hh = Math.max(1, (it.v / max) * ph);
+    ctx.fillStyle = '#2b6cb0';
+    ctx.fillRect(x - bw / 2, padT + ph - hh, bw, hh);
+    if (i % 2 === 0 || i === n - 1) {
+      ctx.fillStyle = '#718096';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(it.label.slice(0, 10), x, padT + ph + 4);
+    }
+  });
+}
+
+async function loadTokens() {
+  const body = $('tokenBody');
+  body.innerHTML = '<tr><td colspan="7" class="muted">加载中…</td></tr>';
+  let list = [];
+  try {
+    const r = await api('/api/user/tokens');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="7" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    list = Array.isArray(d) ? d : (d.tokens || []);
+  } catch (e) { body.innerHTML = '<tr><td colspan="7" class="msg">获取失败</td></tr>'; return; }
+  if (list.length === 0) { body.innerHTML = '<tr><td colspan="7" class="muted">暂无令牌</td></tr>'; return; }
+  body.innerHTML = list.map(t => {
+    const quota = t.unlimited || t.quota < 0 ? '不限' : escapeHtml(String(t.quota));
+    const status = t.status == null ? 1 : Number(t.status);
+    return `<tr>
+      <td>${escapeHtml(t.name || '-')}</td>
+      <td><code>${escapeHtml(maskTok(t.key))}</code> <button class="btn btn-dark" onclick="copyKey('${escapeHtml(t.key)}')">复制</button></td>
+      <td>${escapeHtml(t.group || 'default')}</td>
+      <td>${quota}</td>
+      <td>${escapeHtml(String(t.used || 0))}</td>
+      <td><span class="status ${status ? 'status-on' : 'status-off'}">${status ? '启用' : '禁用'}</span></td>
+      <td><button class="btn btn-danger" onclick="deleteToken('${escapeHtml(t.key)}')">删除</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function copyKey(key) {
+  (navigator.clipboard ? navigator.clipboard.writeText(key) : Promise.reject(new Error('no clipboard')))
+    .then(() => alert('已复制到剪贴板'))
+    .catch(() => alert('复制失败，请手动复制'));
+}
+
+async function createToken() {
+  const data = {
+    name: v('tkName'),
+    quota: parseInt(v('tkQuota'), 10) || -1,
+    models: v('tkModels'),
+    group: v('tkGroup') || 'default'
+  };
+  const r = await api('/api/user/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { alert('创建失败：' + (d.error || d.message || r.status)); return; }
+  const key = d.key || (d.token || {}).key || '';
+  if (key) alert('已创建令牌：\n' + key);
+  $('tkName').value = '';
+  $('tkModels').value = '';
+  await loadTokens();
+}
+
+async function deleteToken(key) {
+  if (!confirm('确认删除该令牌？')) return;
+  const r = await api('/api/user/tokens?key=' + encodeURIComponent(key), { method: 'DELETE' });
+  if (!r.ok) alert('删除失败：' + r.status);
+  await loadTokens();
+}
+
+async function redeem() {
+  const code = v('redeemCode').trim();
+  if (!code) { showMsg('redeemMsg', '请输入充值码', false); return; }
+  const r = await api('/api/redemption/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  const d = await r.json().catch(() => ({}));
+  showMsg('redeemMsg', d.message || (r.ok ? '兑换成功' : '兑换失败'), r.ok);
+  if (r.ok) { $('redeemCode').value = ''; loadUsage(); }
+}
+
+async function loadPlans() {
+  const box = $('planBox');
+  box.innerHTML = '<span class="muted">加载中…</span>';
+  let plans = [];
+  try {
+    const r = await api('/api/plans');
+    if (!r.ok) { box.innerHTML = '<span class="msg">获取失败（' + r.status + '）</span>'; return; }
+    const d = await r.json();
+    plans = d.plans || [];
+  } catch (e) { box.innerHTML = '<span class="msg">获取失败</span>'; return; }
+  if (plans.length === 0) { box.innerHTML = '<span class="muted">暂无可用套餐</span>'; return; }
+  box.innerHTML = plans.map(p => `
+    <div class="plan-row">
+      <div><b>${escapeHtml(p.name)}</b> <span class="small">额度 ${Number(p.quota || 0).toLocaleString()} · 每 ${p.duration_days || 0} 天发放</span></div>
+      <button class="btn btn-success" onclick="subscribe('${escapeHtml(p.name)}')">订阅</button>
+    </div>`).join('');
+}
+
+async function subscribe(name) {
+  const r = await api('/api/plan/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { alert('订阅失败：' + (d.error || d.message || r.status)); return; }
+  alert('已订阅 ' + name + '，发放额度 ' + (d.quota != null ? d.quota : ''));
+  loadUsage();
+}
+
+async function enable2FA() {
+  const username = v('tfUser').trim();
+  if (!username) { showMsg('tfMsg', '请填写用户名', false); return; }
+  const r = await api('/api/user/2fa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.success) { showMsg('tfMsg', '开启失败：' + (d.error || r.status), false); return; }
+  $('tfSecret').textContent = d.secret || '';
+  $('tfOtpauth').textContent = d.otpauth || '';
+  $('tfOtpauth').href = d.otpauth || '#';
+  $('tfSecretBox').style.display = '';
+  showMsg('tfMsg', '请先在认证器中添加密钥，再输入动态码确认', true);
+}
+
+async function confirm2FA() {
+  const username = v('tfUser').trim();
+  const code = v('tfCode').trim();
+  if (!username || !code) { showMsg('tfMsg', '请填写用户名和验证码', false); return; }
+  const r = await api('/api/user/2fa/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, code }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.success) { showMsg('tfMsg', '确认失败：' + (d.error || r.status), false); return; }
+  $('tfSecretBox').style.display = 'none';
+  $('tfCode').value = '';
+  showMsg('tfMsg', '2FA 已开启', true);
+  await loadRecoveryCodes();
+}
+
+async function disable2FA() {
+  const username = v('tfUser').trim();
+  const code = v('tfCode').trim();
+  if (!username || !code) { showMsg('tfMsg', '请填写用户名和验证码', false); return; }
+  const r = await api('/api/user/2fa/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, code }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.success) { showMsg('tfMsg', '关闭失败：' + (d.error || r.status), false); return; }
+  $('tfCode').value = '';
+  $('recBox').style.display = 'none';
+  showMsg('tfMsg', '2FA 已关闭', true);
+}
+
+async function loadRecoveryCodes() {
+  const box = $('recBox');
+  const list = $('recList');
+  let codes = [];
+  try {
+    const r = await api('/api/user/2fa/codes');
+    if (!r.ok) { box.style.display = 'none'; return; }
+    const d = await r.json();
+    codes = Array.isArray(d) ? d : (d.codes || []);
+  } catch (e) { box.style.display = 'none'; return; }
+  if (codes.length === 0) { box.style.display = 'none'; return; }
+  list.innerHTML = codes.map(c => '<span class="rec-code">' + escapeHtml(c) + '</span>').join('');
+  box.style.display = '';
+}
+
+async function loadSessions() {
+  const body = $('sessionBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  let list = [];
+  try {
+    const r = await api('/api/user/sessions');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="4" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    list = Array.isArray(d) ? d : (d.sessions || []);
+  } catch (e) { body.innerHTML = '<tr><td colspan="4" class="msg">获取失败</td></tr>'; return; }
+  if (list.length === 0) { body.innerHTML = '<tr><td colspan="4" class="muted">暂无会话</td></tr>'; return; }
+  body.innerHTML = list.map(s => `<tr>
+    <td><code>${escapeHtml(maskTok(s.token))}</code></td>
+    <td>${escapeHtml(s.username || '-')}</td>
+    <td>${escapeHtml(fmtTime(s.created_at))}</td>
+    <td><button class="btn btn-danger" onclick="revokeSession('${escapeHtml(s.token)}')">注销</button></td>
+  </tr>`).join('');
+}
+
+async function revokeSession(token) {
+  if (!confirm('确认注销该会话？')) return;
+  const r = await api('/api/user/sessions?token=' + encodeURIComponent(token), { method: 'DELETE' });
+  if (!r.ok) alert('注销失败：' + r.status);
+  await loadSessions();
+}
+
+loadAll();
+</script>
+</body>
+</html>

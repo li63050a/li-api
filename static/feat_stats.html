@@ -26,6 +26,12 @@
     .legend { display: flex; gap: 16px; color: #718096; font-size: 13px; margin: 6px 0 10px; }
     .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
     #trendCanvas { display: block; }
+    .live-list { height: 260px; overflow: auto; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+    .live-item { padding: 3px 0; border-bottom: 1px solid #edf2f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .live-time { color: #718096; }
+    .live-cost { color: #dd6b20; }
+    .live-dur { color: #718096; }
+    .live-status { color: #718096; font-size: 13px; margin-left: 10px; }
   </style>
 </head>
 <body>
@@ -44,6 +50,15 @@
     <div class="stat-card"><div class="stat-title">总成本</div><div class="stat-value" id="stTotalCost">—</div></div>
     <div class="stat-card"><div class="stat-title">今日成本</div><div class="stat-value" id="stTodayCost">—</div></div>
     <div class="stat-card"><div class="stat-title">总 Token</div><div class="stat-value" id="stTotalTok">—</div></div>
+  </div>
+
+  <div class="card">
+    <h3>运营指标</h3>
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-title">活跃用户</div><div class="stat-value" id="stActiveUsers">—</div></div>
+      <div class="stat-card"><div class="stat-title">新增用户</div><div class="stat-value" id="stNewUsers">—</div></div>
+      <div class="stat-card"><div class="stat-title">营收</div><div class="stat-value" id="stRevenue">—</div></div>
+    </div>
   </div>
 
   <div class="card">
@@ -74,6 +89,18 @@
   </div>
 
   <div class="card">
+    <h3>按模型错误统计</h3>
+    <table>
+      <thead>
+        <tr><th>模型</th><th>状态码</th><th>次数</th></tr>
+      </thead>
+      <tbody id="modelErrBody">
+        <tr><td colspan="3" class="muted">加载中…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <h3>最近 20 条请求</h3>
     <table>
       <thead>
@@ -84,10 +111,20 @@
       </tbody>
     </table>
   </div>
+
+  <div class="card">
+    <h3>实时日志</h3>
+    <div class="form-group">
+      <button class="btn btn-primary" id="liveBtn" onclick="toggleStream()">开始实时日志</button>
+      <span id="liveStatus" class="live-status">未连接</span>
+    </div>
+    <div class="live-list" id="liveList"></div>
+  </div>
 </div>
 
 <script>
 function fmt(v) { return Number(v || 0).toLocaleString(); }
+function fmtOrDash(v) { return v == null || v === '' ? '—' : fmt(v); }
 
 function statusBadge(s) {
   const n = parseInt(s, 10);
@@ -110,6 +147,7 @@ async function loadStats() {
     $('trendWrap').style.display = 'none';
     $('trendChart').innerHTML = '<span class="muted">加载失败</span>';
     $('statusBody').innerHTML = '<tr><td colspan="4" class="muted">加载失败</td></tr>';
+    $('modelErrBody').innerHTML = '<tr><td colspan="3" class="muted">加载失败</td></tr>';
     return;
   }
   const d = await r.json();
@@ -118,10 +156,15 @@ async function loadStats() {
   $('stTotalCost').textContent = fmt(d.total_cost);
   $('stTodayCost').textContent = fmt(d.today_cost);
   $('stTotalTok').textContent = fmt(d.total_tokens);
+  const ops = d.ops || {};
+  $('stActiveUsers').textContent = fmtOrDash(ops.active_users);
+  $('stNewUsers').textContent = fmtOrDash(ops.new_users);
+  $('stRevenue').textContent = fmtOrDash(ops.revenue);
   drawTrend(d.by_day || []);
   renderChart(d.by_model || []);
   renderStatus(d.status_codes || d.by_error || {});
   renderRecent(d.recent || []);
+  renderModelError(d.by_model_error || []);
 }
 
 function drawTrend(list) {
@@ -269,6 +312,78 @@ function renderRecent(list) {
     <td style="white-space:nowrap">${escapeHtml(e.cost || 0)}</td>
     <td style="white-space:nowrap">${escapeHtml(e.duration || 0)}</td>
   </tr>`).join('');
+}
+
+function renderModelError(list) {
+  const body = $('modelErrBody');
+  if (!Array.isArray(list) || list.length === 0) { body.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>'; return; }
+  body.innerHTML = list.map(e => `<tr>
+    <td>${escapeHtml(e.model)}</td>
+    <td>${statusBadge(e.status)}</td>
+    <td>${fmt(e.count)}</td>
+  </tr>`).join('');
+}
+
+let streamAbort = null;
+
+async function toggleStream() {
+  const btn = $('liveBtn');
+  if (streamAbort) { stopStream(); return; }
+  $('liveList').innerHTML = '';
+  btn.textContent = '停止';
+  $('liveStatus').textContent = '连接中…';
+  streamAbort = new AbortController();
+  try {
+    const resp = await fetch('/api/logs/stream', {
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+      signal: streamAbort.signal
+    });
+    if (!resp.ok || !resp.body) { $('liveStatus').textContent = '连接失败（' + resp.status + '）'; stopStream(); return; }
+    $('liveStatus').textContent = '实时接收中';
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) !== -1) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        block.split('\n').forEach(line => {
+          if (line.indexOf('data:') === 0) handleLogEvent(line.slice(5).trim());
+        });
+      }
+    }
+    stopStream();
+  } catch (e) {
+    if (e.name !== 'AbortError') { $('liveStatus').textContent = '连接中断'; stopStream(); }
+  }
+}
+
+function stopStream() {
+  if (streamAbort) { try { streamAbort.abort(); } catch (e) {} streamAbort = null; }
+  $('liveBtn').textContent = '开始实时日志';
+  $('liveStatus').textContent = '已停止';
+}
+
+function handleLogEvent(raw) {
+  let entry = null;
+  try { entry = JSON.parse(raw); } catch (e) { entry = { raw: raw }; }
+  const box = $('liveList');
+  const row = document.createElement('div');
+  row.className = 'live-item';
+  row.innerHTML = '<span class="live-time">' + escapeHtml(fmtTime(entry.time)) + '</span> ' +
+    '<code>' + escapeHtml(maskTok(entry.token)) + '</code> ' +
+    statusBadge(entry.status) + ' ' +
+    '<b>' + escapeHtml(entry.model || '') + '</b> ' +
+    escapeHtml(entry.path || '') + ' ' +
+    '<span class="live-cost">cost ' + escapeHtml(entry.cost || 0) + '</span> ' +
+    '<span class="live-dur">' + escapeHtml(entry.duration || 0) + 'ms</span>';
+  box.appendChild(row);
+  while (box.children.length > 300) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
 }
 
 async function exportCSV() {

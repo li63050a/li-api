@@ -94,7 +94,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. 匹配路由
 	route, ok := cache.GetRoute(targetPath)
 	if !ok {
-		http.Error(w, "No matching route", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "No matching route", "invalid_request_error")
 		return
 	}
 
@@ -106,7 +106,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 			allowedMap[strings.TrimSpace(p)] = true
 		}
 		if !allowedMap[targetPath] {
-			http.Error(w, "Path not allowed", http.StatusForbidden)
+			writeError(w, http.StatusForbidden, "Path not allowed", "invalid_request_error")
 			return
 		}
 	}
@@ -116,11 +116,11 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		if err := model.CheckAndUse(extractToken(r)); err != nil {
 			switch err {
 			case model.ErrTokenInvalid:
-				http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+				writeError(w, http.StatusUnauthorized, "Invalid API Key", "authentication_error")
 			case model.ErrQuotaExceeded:
-				http.Error(w, "Quota Exceeded", http.StatusForbidden)
+				writeError(w, http.StatusForbidden, "Quota Exceeded", "insufficient_quota")
 			default:
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				writeError(w, http.StatusUnauthorized, "Unauthorized", "authentication_error")
 			}
 			return
 		}
@@ -136,7 +136,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		limiterMu.Unlock()
 		if !lim.Allow() {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			writeError(w, http.StatusTooManyRequests, "Too Many Requests", "rate_limit_error")
 			return
 		}
 	}
@@ -173,7 +173,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 				serve(next)
 				return
 			}
-			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
+			writeError(w, http.StatusBadGateway, "Bad Gateway: "+err.Error(), "server_error")
 		}
 		proxy.ServeHTTP(rw, r.WithContext(ctx))
 	}

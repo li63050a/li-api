@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -163,6 +164,41 @@ func twoFAEnable(w http.ResponseWriter, s *model.Session, req twoFARequest) {
 	})
 }
 
+// generateRecoveryCodes 生成 n 个 8 位十六进制恢复码
+func generateRecoveryCodes(n int) ([]string, error) {
+	codes := make([]string, n)
+	for i := range codes {
+		b := make([]byte, 4)
+		if _, err := rand.Read(b); err != nil {
+			return nil, err
+		}
+		codes[i] = hex.EncodeToString(b)
+	}
+	return codes, nil
+}
+
+// verifyRecoveryCode 校验并消费一个恢复码：匹配则从用户存储列表中移除该码
+func verifyRecoveryCode(username, code string) bool {
+	stored, ok := model.GetUserRecovery(username)
+	if !ok || stored == "" {
+		return false
+	}
+	codes := strings.Split(stored, ",")
+	idx := -1
+	for i, c := range codes {
+		if strings.TrimSpace(c) == strings.TrimSpace(code) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	rest := append(codes[:idx], codes[idx+1:]...)
+	_ = model.SetUserRecovery(username, strings.Join(rest, ","))
+	return true
+}
+
 // twoFAConfirm 校验动态码后正式启用双因素
 func twoFAConfirm(w http.ResponseWriter, s *model.Session, req twoFARequest) {
 	secret, enabled := model.GetUser2FA(req.Username)
@@ -178,8 +214,17 @@ func twoFAConfirm(w http.ResponseWriter, s *model.Session, req twoFARequest) {
 		writeErr(w, http.StatusInternalServerError, "store failed")
 		return
 	}
+	codes, err := generateRecoveryCodes(10)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "generate recovery codes failed")
+		return
+	}
+	if err := model.SetUserRecovery(req.Username, strings.Join(codes, ",")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "store failed")
+		return
+	}
 	_ = model.AppendAudit(s.Username, "2fa_confirm", "确认启用双因素认证")
-	writeJSON(w, map[string]interface{}{"success": true})
+	writeJSON(w, map[string]interface{}{"success": true, "recovery_codes": codes})
 }
 
 // twoFADisable 校验动态码后关闭双因素
@@ -221,7 +266,8 @@ func TwoFAVerifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret, enabled := model.GetUser2FA(req.Username)
-	if !enabled || secret == "" || !verifyTOTP(secret, req.Code, time.Now()) {
+	validTOTP := enabled && secret != "" && verifyTOTP(secret, req.Code, time.Now())
+	if !validTOTP && !verifyRecoveryCode(req.Username, req.Code) {
 		writeErr(w, http.StatusForbidden, "invalid 2fa code")
 		return
 	}

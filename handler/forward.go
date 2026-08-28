@@ -18,9 +18,9 @@ func buildForwardProxy(orig *http.Request, baseURL, targetPath, authType, authKe
 	parsed, err := url.Parse(fullURL)
 	if err != nil {
 		return &httputil.ReverseProxy{
-			Director:    func(*http.Request) {},
+			Director: func(*http.Request) {},
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e error) {
-				http.Error(w, "Invalid upstream URL", http.StatusInternalServerError)
+				writeError(w, http.StatusInternalServerError, "Invalid upstream URL", "server_error")
 			},
 		}
 	}

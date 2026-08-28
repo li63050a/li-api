@@ -19,23 +19,24 @@ import (
 
 // User 账户（仿 new-api：首个注册用户自动成为 root 超级管理员，不预置默认账号）
 type User struct {
-	ID           int       `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"` // 格式 sha256(salt+pw):salt
-	Role         string    `json:"role"`          // root | user
-	Status       int       `json:"status"`        // 1 启用 0 禁用
-	Quota        int64     `json:"quota"`         // 额度（token 数），-1 表示不限
-	Used         int64     `json:"used"`          // 已消耗
-	RateLimit    int       `json:"rate_limit"`    // 每分钟请求数限制，0 不限
-	Email        string    `json:"email"`
-	TwoFASecret  string    `json:"twofa_secret,omitempty"`
-	TwoFAEnabled int       `json:"twofa_enabled"` // 1 启用 TOTP 双因素
-	Group        string    `json:"group"`
-	Avatar       string    `json:"avatar"`
-	InvitedBy    string    `json:"invited_by"`
-	Parent       string    `json:"parent"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            int       `json:"id"`
+	Username      string    `json:"username"`
+	PasswordHash  string    `json:"password_hash"` // 格式 sha256(salt+pw):salt
+	Role          string    `json:"role"`          // root | user
+	Status        int       `json:"status"`        // 1 启用 0 禁用
+	Quota         int64     `json:"quota"`         // 额度（token 数），-1 表示不限
+	Used          int64     `json:"used"`          // 已消耗
+	RateLimit     int       `json:"rate_limit"`    // 每分钟请求数限制，0 不限
+	Email         string    `json:"email"`
+	TwoFASecret   string    `json:"twofa_secret,omitempty"`
+	TwoFAEnabled  int       `json:"twofa_enabled"`            // 1 启用 TOTP 双因素
+	RecoveryCodes string    `json:"recovery_codes,omitempty"` // 2FA 恢复码，逗号分隔
+	Group         string    `json:"group"`
+	Avatar        string    `json:"avatar"`
+	InvitedBy     string    `json:"invited_by"`
+	Parent        string    `json:"parent"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // Session 登录会话
@@ -101,7 +102,7 @@ func InitUsers() error {
 }
 
 func loadUsersFromDB() ([]User, error) {
-	rows, err := db.DB.Query(`SELECT id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,"group",avatar,invited_by,parent,created_at,updated_at FROM users ORDER BY id`)
+	rows, err := db.DB.Query(`SELECT id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,recovery_codes,"group",avatar,invited_by,parent,created_at,updated_at FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func loadUsersFromDB() ([]User, error) {
 	for rows.Next() {
 		var u User
 		var created, updated sql.NullString
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.Quota, &u.Used, &u.RateLimit, &u.Email, &u.TwoFASecret, &u.TwoFAEnabled, &u.Group, &u.Avatar, &u.InvitedBy, &u.Parent, &created, &updated); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.Quota, &u.Used, &u.RateLimit, &u.Email, &u.TwoFASecret, &u.TwoFAEnabled, &u.RecoveryCodes, &u.Group, &u.Avatar, &u.InvitedBy, &u.Parent, &created, &updated); err != nil {
 			return nil, err
 		}
 		u.CreatedAt = db.StrToTime(created.String)
@@ -130,9 +131,9 @@ func saveUsers() error {
 		return err
 	}
 	for _, u := range users {
-		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,"group",avatar,invited_by,parent,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, u.Group, u.Avatar, u.InvitedBy, u.Parent, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,recovery_codes,"group",avatar,invited_by,parent,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, u.RecoveryCodes, u.Group, u.Avatar, u.InvitedBy, u.Parent, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -170,9 +171,9 @@ func saveUsersToDB(us []User) error {
 		return err
 	}
 	for _, u := range us {
-		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,"group",avatar,invited_by,parent,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, u.Group, u.Avatar, u.InvitedBy, u.Parent, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,recovery_codes,"group",avatar,invited_by,parent,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, u.RecoveryCodes, u.Group, u.Avatar, u.InvitedBy, u.Parent, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -480,6 +481,50 @@ func SetUser2FA(username, secret string, enabled bool) error {
 		}
 	}
 	return errors.New("user not found")
+}
+
+// GetUserRecovery 返回用户 2FA 恢复码（逗号分隔）；无恢复码或用户不存在时返回空串与 false
+func GetUserRecovery(username string) (string, bool) {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	for i := range users {
+		if users[i].Username == username {
+			if users[i].RecoveryCodes == "" {
+				return "", false
+			}
+			return users[i].RecoveryCodes, true
+		}
+	}
+	return "", false
+}
+
+// SetUserRecovery 设置用户 2FA 恢复码（逗号分隔），传空串表示清除
+func SetUserRecovery(username, codes string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].RecoveryCodes = codes
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// ListSessions 返回指定用户当前全部会话 token（内存后端）。
+// Redis 后端不支持枚举会话，返回 nil。
+func ListSessions(username string) []string {
+	if redisc.Enabled() {
+		return nil
+	}
+	var out []string
+	sessions.Range(func(k, v interface{}) bool {
+		if s, ok := v.(*Session); ok && s.Username == username {
+			out = append(out, s.Token)
+		}
+		return true
+	})
+	return out
 }
 
 // GetSession 查询会话
