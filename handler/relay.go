@@ -22,8 +22,8 @@ type target struct {
 }
 
 const (
-	failureThreshold     = 5                // 连续失败达到该次数则自动禁用渠道
-	autoRecoverCooldown  = 60 * time.Second // 自动禁用后多久允许试探性恢复
+	failureThreshold    = 5                // 连续失败达到该次数则自动禁用渠道
+	autoRecoverCooldown = 60 * time.Second // 自动禁用后多久允许试探性恢复
 )
 
 var (
@@ -132,6 +132,44 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// WebSocket 透传（如 /v1/realtime）：跳过 body 解析，直接转发首个渠道
+	if strings.EqualFold(r.Header.Get("Connection"), "upgrade") &&
+		strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		wsModel := ResolveModel(r.URL.Query().Get("model"))
+		wsTargets := buildTargets(group, wsModel)
+		if len(wsTargets) == 0 {
+			http.Error(w, "No available channel for model: "+wsModel, http.StatusBadGateway)
+			return
+		}
+		start := time.Now()
+		var wsErr error
+		cw := newCountWriter(w)
+		t := wsTargets[0]
+		proxy := buildForwardProxy(r, t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			wsErr = err
+			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
+		}
+		proxy.ServeHTTP(cw, r)
+		if wsErr == nil && !isChannelError(cw.status) {
+			markChannelSuccess(t.channel.ID)
+		} else {
+			markChannelFailure(t.channel.ID)
+		}
+		cost := maxInt64(1, cw.bytes/4)
+		cost = model.ModelCost(wsModel, cost, 0)
+		_ = model.UseToken(key, cost)
+		model.AddUserUsed(tok.Owner, cost)
+		recordStats(cost)
+		logAccess(map[string]interface{}{
+			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
+			"model": wsModel, "group": group, "token": maskToken(key),
+			"status": cw.status, "stream": true, "cost": cost,
+			"duration": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+
 	// 读取 body 以提取 model / stream（之后会还原用于转发）
 	var modelName string
 	var stream bool
@@ -193,7 +231,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			markChannelFailure(t.channel.ID)
 		}
-		cost := maxInt64(1, cw.bytes/4)
+		cost := relayEndpointCost(r.URL.Path, bodyBuf, make([]byte, cw.bytes), modelName, "stream")
 		cost = model.ModelCost(modelName, cost, 0)
 		_ = model.UseToken(key, cost)
 		model.AddUserUsed(tok.Owner, cost)
@@ -248,18 +286,9 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(respStatus)
 	_, _ = w.Write(respBody)
 
-	// 计费：按 usage 中的 prompt/completion 分别乘以倍率（营业模式）；
-	// 若上游仅给出 total_tokens，则整体按提示词计费
-	prompt, comp := parseUsageParts(respBody)
-	if prompt == 0 && comp == 0 {
-		if total := parseUsage(respBody); total > 0 {
-			prompt = total
-		}
-	}
-	if prompt == 0 && comp == 0 {
-		prompt = maxInt64(1, int64(len(respBody))/4)
-	}
-	cost := model.ModelCost(modelName, prompt, comp)
+	// 计费：按端点类型从 usage / 字节数估算 token 基数（倍率在 ModelCost 中套用）
+	cost := relayEndpointCost(r.URL.Path, bodyBuf, respBody, modelName, "normal")
+	cost = model.ModelCost(modelName, cost, 0)
 	_ = model.UseToken(key, cost)
 	model.AddUserUsed(tok.Owner, cost)
 	recordStats(cost)
@@ -270,6 +299,44 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		"status": respStatus, "stream": false, "cost": cost,
 		"duration": time.Since(start).Milliseconds(),
 	})
+}
+
+// relayEndpointCost 按端点类型估算本次请求消耗的 token 基数
+func relayEndpointCost(path string, reqBody, respBody []byte, modelName string, mode string) int64 {
+	switch {
+	case strings.Contains(path, "/embeddings"):
+		// 嵌入：按 usage.prompt_tokens 计费，缺失时按请求体字节估算
+		if total := parseUsage(respBody); total > 0 {
+			return total
+		}
+		return maxInt64(1, int64(len(reqBody))/4)
+	case strings.Contains(path, "/moderations"):
+		// 审核：按 usage.prompt_tokens 计费，缺失时按响应字节估算
+		if total := parseUsage(respBody); total > 0 {
+			return total
+		}
+		return maxInt64(1, int64(len(respBody)))
+	case strings.Contains(path, "/images"), strings.Contains(path, "/audio"),
+		strings.Contains(path, "/rerank"), strings.Contains(path, "/batch"),
+		strings.Contains(path, "/realtime"):
+		// 图像/音频/重排/批量/实时：优先 usage，否则按响应字节估算
+		if total := parseUsage(respBody); total > 0 {
+			return total
+		}
+		return maxInt64(1, int64(len(respBody))/4)
+	default:
+		// chat/completions：优先 usage 的 prompt/completion，其次 total，最后按字节估算
+		prompt, comp := parseUsageParts(respBody)
+		if prompt == 0 && comp == 0 {
+			if total := parseUsage(respBody); total > 0 {
+				prompt = total
+			}
+		}
+		if prompt == 0 && comp == 0 {
+			prompt = maxInt64(1, int64(len(respBody))/4)
+		}
+		return maxInt64(1, prompt+comp)
+	}
 }
 
 // applyModelMapping 根据渠道的模型映射，把公开模型名转换为上游模型名

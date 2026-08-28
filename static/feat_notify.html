@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>通知设置</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .card { margin-bottom: 14px; }
+    .card h3 { margin-top: 0; }
+    .field { display: flex; flex-direction: column; flex: 1 1 260px; }
+    .field label { font-size: 12px; color: #718096; margin-bottom: 4px; }
+    .hint { font-size: 12px; color: #a0aec0; margin: 0 0 10px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>通知设置</h2>
+    <button class="btn btn-primary" onclick="loadNotify()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>通知渠道配置</h3>
+    <p class="hint">令牌字段出于安全考虑不会回显，重新填写即覆盖；留空保留原值。</p>
+    <div class="form-group">
+      <div class="field">
+        <label>通用 Webhook URL</label>
+        <input id="ntWebhook" placeholder="https://example.com/hook">
+      </div>
+      <div class="field">
+        <label>Telegram Bot Token（只读回显为掩码）</label>
+        <input id="ntTgToken" placeholder="Telegram Bot Token">
+      </div>
+      <div class="field">
+        <label>Telegram Chat ID</label>
+        <input id="ntTgChat" placeholder="Telegram Chat ID">
+      </div>
+    </div>
+    <div class="form-group">
+      <div class="field">
+        <label>钉钉 Webhook</label>
+        <input id="ntDingtalk" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+      </div>
+      <div class="field">
+        <label>飞书 Webhook</label>
+        <input id="ntFeishu" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+      </div>
+      <div class="field">
+        <label>通知接收邮箱</label>
+        <input id="ntEmail" placeholder="admin@example.com">
+      </div>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="saveNotify()">保存设置</button>
+      <button class="btn btn-warning" onclick="sendTest()">发送测试通知</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+function showMsg(text, ok) {
+  const el = $('msg');
+  el.textContent = text;
+  el.style.color = ok ? '#38a169' : '#e53e3e';
+}
+
+async function loadNotify() {
+  try { await ensureAuth(); } catch (e) { return; }
+  const r = await api('/api/setting/notify');
+  if (!r.ok) { showMsg('加载失败', false); return; }
+  const d = await r.json();
+  $('ntWebhook').value = d.webhook || '';
+  $('ntTgToken').value = d.telegram_bot_token || '';
+  $('ntTgChat').value = d.telegram_chat_id || '';
+  $('ntDingtalk').value = d.dingtalk_webhook || '';
+  $('ntFeishu').value = d.feishu_webhook || '';
+  $('ntEmail').value = d.email_to || '';
+}
+
+async function saveNotify() {
+  const data = {
+    webhook: v('ntWebhook').trim(),
+    telegram_bot_token: v('ntTgToken').trim(),
+    telegram_chat_id: v('ntTgChat').trim(),
+    dingtalk_webhook: v('ntDingtalk').trim(),
+    feishu_webhook: v('ntFeishu').trim(),
+    email_to: v('ntEmail').trim()
+  };
+  const r = await api('/api/setting/notify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) { showMsg('保存失败：' + r.status, false); return; }
+  showMsg('已保存', true);
+}
+
+async function sendTest() {
+  const r = await api('/api/setting/notify/test', { method: 'POST' });
+  if (!r.ok) { showMsg('发送失败：' + r.status, false); return; }
+  showMsg('测试通知已发送', true);
+}
+
+loadNotify();
+</script>
+</body>
+</html>

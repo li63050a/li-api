@@ -15,7 +15,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（按 0.0.0.x 依次递增）
-const Version = "0.0.0.7"
+const Version = "0.0.0.8"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -106,8 +106,8 @@ func main() {
 	http.HandleFunc("/admin/redemptions", handler.GuardMiddleware(handler.RedemptionHandler))
 	http.HandleFunc("/admin/redemptions/", handler.GuardMiddleware(handler.RedemptionHandler))
 
-	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*，挂安全守卫）
-	http.HandleFunc("/v1/", handler.GuardMiddleware(handler.RelayHandler))
+	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*，挂敏感词审查 + 安全守卫）
+	http.HandleFunc("/v1/", handler.SensitiveMiddleware(handler.GuardMiddleware(handler.RelayHandler)))
 
 	// 启动服务
 	listen := os.Getenv("LISTEN")

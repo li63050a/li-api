@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>模型别名</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .card { margin-bottom: 14px; }
+    .card h3 { margin-top: 0; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>模型别名</h2>
+    <button class="btn btn-primary" onclick="loadAliases()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>新增 / 更新别名</h3>
+    <div class="form-group">
+      <input id="alName" placeholder="别名（不含空格），如 mygpt">
+      <input id="alModel" placeholder="真实模型名，如 gpt-4o">
+      <button class="btn btn-success" onclick="addAlias()">添加</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>别名列表</h3>
+    <table>
+      <thead>
+        <tr><th>别名</th><th>映射模型</th><th>操作</th></tr>
+      </thead>
+      <tbody id="aliasBody">
+        <tr><td colspan="3" style="color:#718096">加载中…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let aliasList = [];
+
+function showMsg(text, ok) {
+  const el = $('msg');
+  el.textContent = text;
+  el.style.color = ok ? '#38a169' : '#e53e3e';
+}
+
+async function loadAliases() {
+  try { await ensureAuth(); } catch (e) { return; }
+  const body = $('aliasBody');
+  body.innerHTML = '<tr><td colspan="3" style="color:#718096">加载中…</td></tr>';
+  const r = await api('/api/model_aliases');
+  if (!r.ok) { body.innerHTML = '<tr><td colspan="3" style="color:#e53e3e">加载失败</td></tr>'; return; }
+  const d = await r.json();
+  const aliases = d.aliases || {};
+  aliasList = Object.keys(aliases).sort().map(name => [name, aliases[name]]);
+  if (aliasList.length === 0) {
+    body.innerHTML = '<tr><td colspan="3" style="color:#718096">暂无别名</td></tr>';
+    return;
+  }
+  body.innerHTML = aliasList.map((pair, i) =>
+    `<tr>
+      <td><code>${escapeHtml(pair[0])}</code></td>
+      <td>${escapeHtml(pair[1])}</td>
+      <td><button class="btn btn-danger" onclick="delAlias(${i})">删除</button></td>
+    </tr>`
+  ).join('');
+}
+
+async function addAlias() {
+  const name = v('alName').trim();
+  const model = v('alModel').trim();
+  if (!name || !model) { showMsg('请填写别名和映射模型', false); return; }
+  const r = await api('/api/model_aliases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, model })
+  });
+  if (!r.ok) { showMsg('添加失败：' + r.status, false); return; }
+  $('alName').value = '';
+  $('alModel').value = '';
+  showMsg('已保存', true);
+  await loadAliases();
+}
+
+async function delAlias(i) {
+  const name = aliasList[i] && aliasList[i][0];
+  if (!name) return;
+  if (!confirm('确认删除别名 ' + name + ' ？')) return;
+  const r = await api('/api/model_aliases?name=' + encodeURIComponent(name), { method: 'DELETE' });
+  if (!r.ok) { showMsg('删除失败：' + r.status, false); return; }
+  await loadAliases();
+}
+
+loadAliases();
+</script>
+</body>
+</html>

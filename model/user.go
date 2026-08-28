@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"api-gateway/db"
+	"api-gateway/redisc"
 )
 
 // User 账户（仿 new-api：首个注册用户自动成为 root 超级管理员，不预置默认账号）
@@ -40,15 +42,28 @@ type Session struct {
 }
 
 var (
-	userMu   sync.RWMutex
-	users    []User
-	userNext int
-	sessions sync.Map // token -> *Session
+	userMu         sync.RWMutex
+	users          []User
+	userNext       int
+	sessions       sync.Map // token -> *Session
+	sessionLogOnce sync.Once
 )
+
+// logSessionBackend 启动时记录一次会话后端选择（redis 或 memory）。
+func logSessionBackend() {
+	sessionLogOnce.Do(func() {
+		if redisc.Enabled() {
+			log.Printf("sessions: redis")
+		} else {
+			log.Printf("sessions: memory")
+		}
+	})
+}
 
 // InitUsers 从 SQLite 加载用户（首次运行自动从旧 JSON 迁移）。
 // 不预置默认管理员；若系统尚无任何用户，可用环境变量 INIT_ROOT_USER / INIT_ROOT_PASSWORD 按需引导初始 root。
 func InitUsers() error {
+	logSessionBackend()
 	us, err := loadUsersFromDB()
 	if err != nil {
 		return err
@@ -195,6 +210,10 @@ func VerifyUser(username, password string) (*User, bool) {
 // CreateSession 创建会话并返回 token
 func CreateSession(username string) string {
 	tok := randToken(32)
+	if redisc.Enabled() {
+		_ = redisc.Set("sess:"+tok, username, 7*24*time.Hour)
+		return tok
+	}
 	sessions.Store(tok, &Session{Token: tok, Username: username, CreatedAt: time.Now()})
 	return tok
 }
@@ -410,6 +429,13 @@ func GetSession(token string) (*Session, bool) {
 	if token == "" {
 		return nil, false
 	}
+	if redisc.Enabled() {
+		username, ok := redisc.Get("sess:" + token)
+		if !ok {
+			return nil, false
+		}
+		return &Session{Token: token, Username: username, CreatedAt: time.Now()}, true
+	}
 	v, ok := sessions.Load(token)
 	if !ok {
 		return nil, false
@@ -419,5 +445,9 @@ func GetSession(token string) (*Session, bool) {
 
 // DeleteSession 注销会话
 func DeleteSession(token string) {
+	if redisc.Enabled() {
+		_ = redisc.Del("sess:" + token)
+		return
+	}
 	sessions.Delete(token)
 }

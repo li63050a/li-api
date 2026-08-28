@@ -50,6 +50,14 @@
 | 用量统计 | `/api/stats` 聚合看板（请求数 / 消耗 / 按模型 / 按用户 / 状态码）+ CSV 导出 |
 | 模型别名 | `alias.*` 把公开名映射到真实模型，`/v1/models` 自动列出，转发时自动解析 |
 | 容器部署 | 附带 Dockerfile / docker-compose.yml |
+| 端点适配 | `/v1/embeddings`、`/v1/images/*`、`/v1/audio/*`、`/v1/rerank`、`/v1/batch`、`/v1/realtime`(WebSocket) 按端点计费与直通 |
+| 敏感词审查 | 请求内容审核（可配置词库，命中返回 403，中间件挂 `/v1/*`） |
+| 分布式会话 | 可选 Redis（`REDIS_ADDR` 启用），多实例共享登录会话 |
+| MCP | `/mcp` 提供 JSON-RPC + SSE，暴露 模型/渠道/令牌/用户/统计 等工具 |
+| 渠道余额 | `/admin/channels/balance/{id}` 查询上游余额（OpenAI credit_grants） |
+| 企业账单 | `/api/billing/summary` 月度汇总（请求数/消耗/TOP 模型）+ CSV |
+| OAuth 扩展 | 新增 **LinuxDO / Discord** 一键登录 |
+| 前端页面 | 安全设置（2FA/OAuth/守卫）、通知设置、模型别名、统计看板 可视化页面 |
 
 ---
 
@@ -256,6 +264,9 @@ curl https://你的网关/v1/chat/completions \
 | --- | --- |
 | `LISTEN` | 监听地址，覆盖 `config.json` 中的 `listen`（默认 `:8090`） |
 | `DATA_DIR` | 数据目录，覆盖 `config.json` 中的 `data_dir`（默认 `data`） |
+| `INIT_ROOT_USER` / `INIT_ROOT_PASSWORD` | 首次启动时按需引导初始 root（不预置默认账号） |
+| `REDIS_ADDR` | 可选：启用分布式会话（如 `127.0.0.1:6379`），多实例共享登录态 |
+| `REDIS_PASSWORD` | 可选：Redis 密码 |
 
 > 鉴权采用账户会话体系：用 `root` 登录后拿到的会话令牌作为管理凭证，已取代旧版的 `ADMIN_TOKEN`。
 

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>安全设置</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .card { margin-bottom: 14px; }
+    .card h3 { margin-top: 0; }
+    .field { display: flex; flex-direction: column; flex: 1 1 220px; }
+    .field label { font-size: 12px; color: #718096; margin-bottom: 4px; }
+    textarea { font-family: inherit; resize: vertical; }
+    .otpauth { word-break: break-all; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>安全设置</h2>
+    <button class="btn btn-primary" onclick="loadAll()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>TOTP 双因素认证 (2FA)</h3>
+    <div class="form-group">
+      <div class="field">
+        <label>用户名</label>
+        <input id="tfUser" placeholder="用户名">
+      </div>
+      <button class="btn btn-success" onclick="enable2FA()">开启 2FA</button>
+    </div>
+    <div id="tfSecretBox" style="display:none;margin:10px 0">
+      <p>密钥：<code id="tfSecret"></code></p>
+      <p>认证器地址：<a id="tfOtpauth" class="otpauth" href="#" target="_blank" rel="noopener"></a></p>
+    </div>
+    <div class="form-group">
+      <div class="field">
+        <label>动态验证码</label>
+        <input id="tfCode" placeholder="6 位验证码">
+      </div>
+      <button class="btn btn-primary" onclick="confirm2FA()">确认</button>
+      <button class="btn btn-danger" onclick="disable2FA()">关闭</button>
+      <span id="tfMsg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>OAuth 第三方登录配置</h3>
+    <div class="form-group">
+      <div class="field">
+        <label>GitHub Client ID</label>
+        <input id="ghId" placeholder="GitHub Client ID">
+      </div>
+      <div class="field">
+        <label>GitHub Client Secret（留空=保留原值）</label>
+        <input id="ghSecret" type="password" placeholder="GitHub Client Secret">
+      </div>
+      <div class="field">
+        <label>Google Client ID</label>
+        <input id="ggId" placeholder="Google Client ID">
+      </div>
+      <div class="field">
+        <label>Google Client Secret（留空=保留原值）</label>
+        <input id="ggSecret" type="password" placeholder="Google Client Secret">
+      </div>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="saveOAuth()">保存 OAuth 配置</button>
+      <span id="oauthMsg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>安全守卫（IP 白/黑名单与限流）</h3>
+    <div class="form-group">
+      <div class="field">
+        <label>IP 白名单（每行一个，支持 CIDR 如 192.168.1.0/24）</label>
+        <textarea id="gwWhitelist" rows="4" placeholder="留空=不启用"></textarea>
+      </div>
+      <div class="field">
+        <label>IP 黑名单</label>
+        <textarea id="gwBlacklist" rows="4" placeholder="留空=不启用"></textarea>
+      </div>
+      <div class="field">
+        <label>每分钟请求数限制（0=不限）</label>
+        <input id="gwRateLimit" type="number" value="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="saveGuard()">保存守卫配置</button>
+      <span id="guardMsg" class="msg"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentUser = '';
+
+async function loadAll() {
+  try {
+    const me = await ensureAuth();
+    currentUser = me.username || '';
+  } catch (e) { return; }
+  $('tfUser').value = currentUser;
+  await loadOAuth();
+  await loadGuard();
+}
+
+function showMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.style.color = ok ? '#38a169' : '#e53e3e';
+}
+
+async function postJSON(path, data) {
+  const r = await api(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, d };
+}
+
+async function enable2FA() {
+  const username = v('tfUser').trim();
+  if (!username) { showMsg('tfMsg', '请填写用户名', false); return; }
+  const { ok, status, d } = await postJSON('/api/user/2fa/enable', { username });
+  if (!ok || !d.success) { showMsg('tfMsg', '开启失败：' + (d.error || status), false); return; }
+  $('tfSecret').textContent = d.secret || '';
+  $('tfOtpauth').textContent = d.otpauth || '';
+  $('tfOtpauth').href = d.otpauth || '#';
+  $('tfSecretBox').style.display = '';
+  showMsg('tfMsg', '请先在认证器中添加密钥，再输入动态码确认', true);
+}
+
+async function confirm2FA() {
+  const username = v('tfUser').trim();
+  const code = v('tfCode').trim();
+  if (!username || !code) { showMsg('tfMsg', '请填写用户名和验证码', false); return; }
+  const { ok, status, d } = await postJSON('/api/user/2fa/confirm', { username, code });
+  if (!ok || !d.success) { showMsg('tfMsg', '确认失败：' + (d.error || status), false); return; }
+  $('tfSecretBox').style.display = 'none';
+  $('tfCode').value = '';
+  showMsg('tfMsg', '2FA 已开启', true);
+}
+
+async function disable2FA() {
+  const username = v('tfUser').trim();
+  const code = v('tfCode').trim();
+  if (!username || !code) { showMsg('tfMsg', '请填写用户名和验证码', false); return; }
+  const { ok, status, d } = await postJSON('/api/user/2fa/disable', { username, code });
+  if (!ok || !d.success) { showMsg('tfMsg', '关闭失败：' + (d.error || status), false); return; }
+  $('tfCode').value = '';
+  showMsg('tfMsg', '2FA 已关闭', true);
+}
+
+async function loadOAuth() {
+  const r = await api('/api/setting/oauth');
+  if (!r.ok) { showMsg('oauthMsg', '加载失败', false); return; }
+  const d = await r.json();
+  $('ghId').value = d.github_client_id || '';
+  $('ggId').value = d.google_client_id || '';
+}
+
+async function saveOAuth() {
+  const { ok, status, d } = await postJSON('/api/setting/oauth', {
+    github_client_id: v('ghId').trim(),
+    github_client_secret: v('ghSecret').trim(),
+    google_client_id: v('ggId').trim(),
+    google_client_secret: v('ggSecret').trim()
+  });
+  if (!ok) { showMsg('oauthMsg', '保存失败：' + (d.error || status), false); return; }
+  $('ghSecret').value = '';
+  $('ggSecret').value = '';
+  showMsg('oauthMsg', '已保存', true);
+}
+
+async function loadGuard() {
+  const r = await api('/api/setting/guard');
+  if (!r.ok) { showMsg('guardMsg', '加载失败', false); return; }
+  const d = await r.json();
+  $('gwWhitelist').value = d.ip_whitelist || '';
+  $('gwBlacklist').value = d.ip_blacklist || '';
+  $('gwRateLimit').value = d.ip_rate_limit || 0;
+}
+
+async function saveGuard() {
+  const { ok, status, d } = await postJSON('/api/setting/guard', {
+    ip_whitelist: v('gwWhitelist'),
+    ip_blacklist: v('gwBlacklist'),
+    ip_rate_limit: parseInt(v('gwRateLimit'), 10) || 0
+  });
+  if (!ok) { showMsg('guardMsg', '保存失败：' + (d.error || status), false); return; }
+  showMsg('guardMsg', '已保存', true);
+}
+
+loadAll();
+</script>
+</body>
+</html>

@@ -20,6 +20,10 @@ const (
 	kvGithubClientSecret = "oauth.github.client_secret"
 	kvGoogleClientID     = "oauth.google.client_id"
 	kvGoogleClientSecret = "oauth.google.client_secret"
+	kvLinuxdoClientID    = "oauth.linuxdo.client_id"
+	kvLinuxdoClientSecret = "oauth.linuxdo.client_secret"
+	kvDiscordClientID    = "oauth.discord.client_id"
+	kvDiscordClientSecret = "oauth.discord.client_secret"
 )
 
 var oauthHTTPClient = &http.Client{Timeout: 15 * time.Second}
@@ -88,7 +92,7 @@ func OAuthHandler(w http.ResponseWriter, r *http.Request) {
 	rest = strings.TrimSuffix(rest, "/")
 	parts := strings.SplitN(rest, "/", 2)
 	provider := parts[0]
-	if provider != "github" && provider != "google" {
+	if provider != "github" && provider != "google" && provider != "linuxdo" && provider != "discord" {
 		writeOAuthErr(w, http.StatusNotFound, "unknown oauth provider")
 		return
 	}
@@ -118,13 +122,22 @@ func oauthStart(w http.ResponseWriter, r *http.Request, provider string) {
 		"state":        {state},
 	}
 	var endpoint string
-	if provider == "github" {
+	switch provider {
+	case "github":
 		endpoint = "https://github.com/login/oauth/authorize"
 		values.Set("scope", "read:user user:email")
-	} else {
+	case "google":
 		endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
 		values.Set("response_type", "code")
 		values.Set("scope", "email profile")
+	case "linuxdo":
+		endpoint = "https://linux.do/oauth/authorize"
+		values.Set("response_type", "code")
+		values.Set("scope", "read")
+	case "discord":
+		endpoint = "https://discord.com/api/oauth2/authorize"
+		values.Set("response_type", "code")
+		values.Set("scope", "identify email")
 	}
 	http.Redirect(w, r, endpoint+"?"+values.Encode(), http.StatusFound)
 }
@@ -183,6 +196,12 @@ func oauthExchangeToken(provider, clientID, clientSecret, code, redirectURI stri
 	}
 	if provider == "github" {
 		endpoint = "https://github.com/login/oauth/access_token"
+	} else if provider == "linuxdo" {
+		endpoint = "https://linux.do/oauth/token"
+		form.Set("grant_type", "authorization_code")
+	} else if provider == "discord" {
+		endpoint = "https://discord.com/api/oauth2/token"
+		form.Set("grant_type", "authorization_code")
 	} else {
 		endpoint = "https://oauth2.googleapis.com/token"
 		form.Set("grant_type", "authorization_code")
@@ -218,9 +237,14 @@ func oauthExchangeToken(provider, clientID, clientSecret, code, redirectURI stri
 // oauthFetchUser 拉取用户信息，返回 (username, email)
 func oauthFetchUser(provider, token string) (string, string, error) {
 	var endpoint string
-	if provider == "github" {
+	switch provider {
+	case "github":
 		endpoint = "https://api.github.com/user"
-	} else {
+	case "linuxdo":
+		endpoint = "https://linux.do/oauth/userinfo"
+	case "discord":
+		endpoint = "https://discord.com/api/users/@me"
+	default:
 		endpoint = "https://openidconnect.googleapis.com/v1/userinfo"
 	}
 	req, err := http.NewRequest("GET", endpoint, nil)
@@ -247,9 +271,17 @@ func oauthFetchUser(provider, token string) (string, string, error) {
 	}
 	username := ""
 	email, _ := out["email"].(string)
-	if provider == "github" {
+	switch provider {
+	case "github":
 		username, _ = out["login"].(string)
-	} else {
+	case "linuxdo":
+		username, _ = out["username"].(string)
+	case "discord":
+		name, _ := out["username"].(string)
+		if name != "" {
+			username = "discord_" + name
+		}
+	default:
 		if i := strings.IndexByte(email, '@'); i > 0 {
 			username = email[:i]
 		}
@@ -268,11 +300,19 @@ func OAuthConfigHandler(w http.ResponseWriter, r *http.Request) {
 		githubSecret, _ := model.KVGet(kvGithubClientSecret)
 		googleID, _ := model.KVGet(kvGoogleClientID)
 		googleSecret, _ := model.KVGet(kvGoogleClientSecret)
+		linuxdoID, _ := model.KVGet(kvLinuxdoClientID)
+		linuxdoSecret, _ := model.KVGet(kvLinuxdoClientSecret)
+		discordID, _ := model.KVGet(kvDiscordClientID)
+		discordSecret, _ := model.KVGet(kvDiscordClientSecret)
 		writeOAuthJSON(w, map[string]interface{}{
-			"github_client_id":  githubID,
-			"github_configured": githubID != "" && githubSecret != "",
-			"google_client_id":  googleID,
-			"google_configured": googleID != "" && googleSecret != "",
+			"github_client_id":   githubID,
+			"github_configured":  githubID != "" && githubSecret != "",
+			"google_client_id":   googleID,
+			"google_configured":  googleID != "" && googleSecret != "",
+			"linuxdo_client_id":  linuxdoID,
+			"linuxdo_configured": linuxdoID != "" && linuxdoSecret != "",
+			"discord_client_id":  discordID,
+			"discord_configured": discordID != "" && discordSecret != "",
 		})
 	case "POST":
 		s, ok := requireSession(r)
@@ -281,10 +321,14 @@ func OAuthConfigHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			GithubClientID     string `json:"github_client_id"`
-			GithubClientSecret string `json:"github_client_secret"`
-			GoogleClientID     string `json:"google_client_id"`
-			GoogleClientSecret string `json:"google_client_secret"`
+			GithubClientID      string `json:"github_client_id"`
+			GithubClientSecret  string `json:"github_client_secret"`
+			GoogleClientID      string `json:"google_client_id"`
+			GoogleClientSecret  string `json:"google_client_secret"`
+			LinuxdoClientID     string `json:"linuxdo_client_id"`
+			LinuxdoClientSecret string `json:"linuxdo_client_secret"`
+			DiscordClientID     string `json:"discord_client_id"`
+			DiscordClientSecret string `json:"discord_client_secret"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeOAuthErr(w, http.StatusBadRequest, "invalid request")
@@ -294,6 +338,10 @@ func OAuthConfigHandler(w http.ResponseWriter, r *http.Request) {
 		_ = model.KVSet(kvGithubClientSecret, req.GithubClientSecret)
 		_ = model.KVSet(kvGoogleClientID, req.GoogleClientID)
 		_ = model.KVSet(kvGoogleClientSecret, req.GoogleClientSecret)
+		_ = model.KVSet(kvLinuxdoClientID, req.LinuxdoClientID)
+		_ = model.KVSet(kvLinuxdoClientSecret, req.LinuxdoClientSecret)
+		_ = model.KVSet(kvDiscordClientID, req.DiscordClientID)
+		_ = model.KVSet(kvDiscordClientSecret, req.DiscordClientSecret)
 		_ = model.AppendAudit(s.Username, "oauth_config", "更新第三方 OAuth 配置")
 		writeOAuthJSON(w, map[string]interface{}{"ok": true})
 	default:

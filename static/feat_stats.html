@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>统计看板</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .stat-cards { display: flex; gap: 12px; margin: 12px 0 18px; flex-wrap: wrap; }
+    .stat-card { flex: 1 1 150px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }
+    .stat-title { color: #718096; font-size: 13px; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #2b6cb0; }
+    .card { margin-bottom: 16px; }
+    .card h3 { margin-top: 0; }
+    .ubar { height: 14px; background: #edf2f7; border-radius: 3px; overflow: hidden; min-width: 140px; }
+    .ubar-fill { height: 100%; background: #2b6cb0; border-radius: 3px; }
+    .muted { color: #718096; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>统计看板</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadStats()">刷新</button>
+      <button class="btn btn-dark" onclick="exportCSV()">导出 CSV</button>
+    </div>
+  </div>
+
+  <div class="stat-cards">
+    <div class="stat-card"><div class="stat-title">总请求数</div><div class="stat-value" id="stTotalReq">—</div></div>
+    <div class="stat-card"><div class="stat-title">今日请求</div><div class="stat-value" id="stTodayReq">—</div></div>
+    <div class="stat-card"><div class="stat-title">总成本</div><div class="stat-value" id="stTotalCost">—</div></div>
+    <div class="stat-card"><div class="stat-title">今日成本</div><div class="stat-value" id="stTodayCost">—</div></div>
+    <div class="stat-card"><div class="stat-title">总 Token</div><div class="stat-value" id="stTotalTok">—</div></div>
+  </div>
+
+  <div class="card">
+    <h3>模型消耗 Top10</h3>
+    <div id="modelChart" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h3>最近 20 条请求</h3>
+    <table>
+      <thead>
+        <tr><th>时间</th><th>模型</th><th>令牌</th><th>状态</th><th>成本</th><th>耗时(ms)</th></tr>
+      </thead>
+      <tbody id="recentBody">
+        <tr><td colspan="6" class="muted">加载中…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function fmt(v) { return Number(v || 0).toLocaleString(); }
+
+async function loadStats() {
+  try { await ensureAuth(); } catch (e) { return; }
+  $('stTotalReq').textContent = '加载中…';
+  const r = await api('/api/stats');
+  if (!r.ok) {
+    $('stTotalReq').textContent = '加载失败';
+    $('modelChart').textContent = '加载失败';
+    $('recentBody').innerHTML = '<tr><td colspan="6" class="muted">加载失败</td></tr>';
+    return;
+  }
+  const d = await r.json();
+  $('stTotalReq').textContent = fmt(d.total_requests);
+  $('stTodayReq').textContent = fmt(d.today_requests);
+  $('stTotalCost').textContent = fmt(d.total_cost);
+  $('stTodayCost').textContent = fmt(d.today_cost);
+  $('stTotalTok').textContent = fmt(d.total_tokens);
+  renderChart(d.by_model || []);
+  renderRecent(d.recent || []);
+}
+
+function renderChart(list) {
+  const el = $('modelChart');
+  if (list.length === 0) { el.innerHTML = '<span class="muted">暂无数据</span>'; return; }
+  const max = Math.max.apply(null, list.map(m => m.requests || 0)) || 1;
+  el.innerHTML = '<table style="box-shadow:none"><tbody>' + list.map(m => {
+    const req = Number(m.requests || 0);
+    const pct = Math.round(req / max * 100);
+    return `<tr>
+      <td style="white-space:nowrap;font-weight:600">${escapeHtml(m.model)}</td>
+      <td style="white-space:nowrap">${fmt(req)} 次</td>
+      <td><div class="ubar"><div class="ubar-fill" style="width:${pct}%"></div></div></td>
+      <td style="white-space:nowrap">成本 ${fmt(m.cost)}</td>
+    </tr>`;
+  }).join('') + '</tbody></table>';
+}
+
+function renderRecent(list) {
+  const body = $('recentBody');
+  if (list.length === 0) { body.innerHTML = '<tr><td colspan="6" class="muted">暂无记录</td></tr>'; return; }
+  body.innerHTML = list.map(e => `<tr>
+    <td>${escapeHtml(fmtTime(e.time))}</td>
+    <td>${escapeHtml(e.model || '-')}</td>
+    <td>${escapeHtml(maskTok(e.token))}</td>
+    <td>${escapeHtml(e.status || '-')}</td>
+    <td>${escapeHtml(e.cost || 0)}</td>
+    <td>${escapeHtml(e.duration || 0)}</td>
+  </tr>`).join('');
+}
+
+async function exportCSV() {
+  const r = await api('/api/stats/export');
+  if (!r.ok) { alert('导出失败：' + r.status); return; }
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+loadStats();
+</script>
+</body>
+</html>

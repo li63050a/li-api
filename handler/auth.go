@@ -71,10 +71,12 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 仿 new-api：系统无任何用户时，首个注册用户自动成为 root 超级管理员
 	role := "user"
+	quota := int64(0)
 	if model.CountUsers() == 0 {
 		role = "root"
+		quota = -1 // root 不限额度
 	}
-	if err := model.CreateUser(cred.Username, cred.Password, role, 0); err != nil {
+	if err := model.CreateUser(cred.Username, cred.Password, role, quota); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
