@@ -41,82 +41,92 @@
         <aside class="sidebar">
             <div class="brand">
                 <div class="brand-logo">API</div>
-                <div>
+                <div class="brand-text">
                     <div class="brand-name">API 网关</div>
                     <div class="brand-sub">管理控制台</div>
                 </div>
             </div>
             <nav class="menu" id="menu">
-                <div class="menu-group">仪表盘</div>
-                <a class="menu-item" href="#" data-page="feat_usage" onclick="return nav('feat_usage','仪表盘',this)"><span class="mi">⌂</span>仪表盘</a>
-                <a class="menu-item" href="#" data-page="feat_rankings" onclick="return nav('feat_rankings','排行榜',this)"><span class="mi">♛</span>排行榜</a>
-                <a class="menu-item" href="#" data-page="feat_pricing" onclick="return nav('feat_pricing','定价页',this)"><span class="mi">¥</span>定价页</a>
+                <div class="menu-group">概览</div>
+                <a class="menu-item" href="#" data-page="feat_usage" onclick="return nav('feat_usage','仪表盘',this)"><span class="mi">⌂</span><span class="mi-label">仪表盘</span></a>
+                <a class="menu-item" href="#" data-page="feat_logs" data-root="1" onclick="return nav('feat_logs','使用日志',this)"><span class="mi">☰</span><span class="mi-label">使用日志</span></a>
+                <a class="menu-item" href="#" data-page="feat_errors" data-root="1" onclick="return nav('feat_errors','错误日志',this)"><span class="mi">⚠</span><span class="mi-label">错误日志</span></a>
 
-                <div class="menu-group">日志</div>
-                <a class="menu-item" href="#" data-page="feat_logs" data-root="1" onclick="return nav('feat_logs','使用日志',this)"><span class="mi">☰</span>使用日志</a>
+                <div class="menu-group">管理</div>
+                <a class="menu-item" href="#" data-page="feat_channels" data-root="1" onclick="return nav('feat_channels','渠道',this)"><span class="mi">⇄</span><span class="mi-label">渠道</span></a>
+                <a class="menu-item" href="#" data-page="feat_tokens" data-root="1" onclick="return nav('feat_tokens','令牌',this)"><span class="mi">⬡</span><span class="mi-label">令牌</span></a>
+                <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型',this)"><span class="mi">♢</span><span class="mi-label">模型</span></a>
+                <a class="menu-item" href="#" data-page="feat_users" data-root="1" onclick="return nav('feat_users','用户',this)"><span class="mi">◉</span><span class="mi-label">用户</span></a>
 
-                <div class="menu-group">渠道</div>
-                <a class="menu-item" href="#" data-page="feat_channels" data-root="1" onclick="return nav('feat_channels','渠道',this)"><span class="mi">⇄</span>渠道</a>
-                <a class="menu-item" href="#" data-page="feat_sync" data-root="1" onclick="return nav('feat_sync','上游同步',this)"><span class="mi">⇅</span>上游同步</a>
+                <div class="menu-group">消费</div>
+                <a class="menu-item" href="#" data-page="feat_stats" data-root="1" onclick="return nav('feat_stats','消费统计',this)"><span class="mi">⌁</span><span class="mi-label">消费统计</span></a>
+                <a class="menu-item" href="#" data-page="feat_wallet" onclick="return nav('feat_wallet','钱包',this)"><span class="mi">⟳</span><span class="mi-label">钱包</span></a>
+                <a class="menu-item" href="#" data-page="feat_plans" onclick="return nav('feat_plans','订阅',this)"><span class="mi">⌾</span><span class="mi-label">订阅</span></a>
+                <a class="menu-item" href="#" data-page="feat_redemptions" data-root="1" onclick="return nav('feat_redemptions','兑换码',this)"><span class="mi">⟲</span><span class="mi-label">兑换码</span></a>
+                <a class="menu-item" href="#" data-page="feat_testchat" onclick="return nav('feat_testchat','模型测试',this)"><span class="mi">✎</span><span class="mi-label">模型测试</span></a>
+                <a class="menu-item" href="#" data-page="feat_chat" data-root="1" onclick="return nav('feat_chat','聊天',this)"><span class="mi">✉</span><span class="mi-label">聊天</span></a>
 
-                <div class="menu-group">令牌</div>
-                <a class="menu-item" href="#" data-page="feat_tokens" data-root="1" onclick="return nav('feat_tokens','令牌',this)"><span class="mi">⬡</span>令牌</a>
-
-                <div class="menu-group">模型</div>
-                <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型',this)"><span class="mi">♢</span>模型</a>
-                <a class="menu-item" href="#" data-page="feat_vmodels" data-root="1" onclick="return nav('feat_vmodels','虚拟模型',this)"><span class="mi">⌬</span>虚拟模型</a>
-
-                <div class="menu-group">统计</div>
-                <a class="menu-item" href="#" data-page="feat_stats" data-root="1" onclick="return nav('feat_stats','消费统计',this)"><span class="mi">⌁</span>消费统计</a>
-
-                <div class="menu-group">用户</div>
-                <a class="menu-item" href="#" data-page="feat_users" data-root="1" onclick="return nav('feat_users','用户',this)"><span class="mi">◉</span>用户</a>
-                <a class="menu-item" href="#" data-page="feat_wallet" onclick="return nav('feat_wallet','钱包',this)"><span class="mi">⟳</span>钱包</a>
-                <a class="menu-item" href="#" data-page="feat_plans" onclick="return nav('feat_plans','订阅',this)"><span class="mi">⌾</span>订阅</a>
-                <a class="menu-item" href="#" data-page="feat_redemptions" data-root="1" onclick="return nav('feat_redemptions','兑换码',this)"><span class="mi">⟲</span>兑换码</a>
-
-                <div class="menu-group">工具</div>
-                <a class="menu-item" href="#" data-page="feat_testchat" onclick="return nav('feat_testchat','模型测试',this)"><span class="mi">✎</span>模型测试</a>
-                <a class="menu-item" href="#" data-page="feat_presets" onclick="return nav('feat_presets','聊天预设',this)"><span class="mi">⚑</span>聊天预设</a>
-                <a class="menu-item" href="#" data-page="feat_chat" data-root="1" onclick="return nav('feat_chat','聊天',this)"><span class="mi">✉</span>聊天</a>
-
-                <div class="menu-group">账户</div>
-                <a class="menu-item" href="#" data-page="console" onclick="return nav('console','个人中心',this)"><span class="mi">☺</span>个人中心</a>
-
-                <div class="menu-group">设置</div>
-                <a class="menu-item" href="#" data-page="feat_site" data-root="1" onclick="return nav('feat_site','系统设置',this)"><span class="mi">⚙</span>系统设置</a>
-                <a class="menu-item" href="#" data-page="feat_system_info" data-root="1" onclick="return nav('feat_system_info','系统信息',this)"><span class="mi">◎</span>系统信息</a>
-                <a class="menu-item" href="#" data-page="feat_errors" data-root="1" onclick="return nav('feat_errors','错误日志',this)"><span class="mi">⚠</span>错误日志</a>
-                <a class="menu-item" href="#" data-page="feat_about" onclick="return nav('feat_about','关于',this)"><span class="mi">ℹ</span>关于</a>
+                <div class="menu-group">系统</div>
+                <a class="menu-item" href="#" data-page="console" onclick="return nav('console','个人中心',this)"><span class="mi">☺</span><span class="mi-label">个人中心</span></a>
+                <div class="menu-sub">
+                    <a class="menu-item menu-parent" href="#" onclick="return toggleSub(this)"><span class="mi">⚙</span><span class="mi-label">系统设置</span><span class="chev">▾</span></a>
+                    <div class="submenu">
+                        <a class="menu-item" href="#" data-page="feat_site" data-root="1" onclick="return nav('feat_site','站点与品牌',this)"><span class="mi">◈</span><span class="mi-label">站点与品牌</span></a>
+                        <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','认证与登录',this)"><span class="mi">⊕</span><span class="mi-label">认证与登录</span></a>
+                        <a class="menu-item" href="#" data-page="feat_wallet" onclick="return nav('feat_wallet','计费与支付',this)"><span class="mi">¥</span><span class="mi-label">计费与支付</span></a>
+                        <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型与路由',this)"><span class="mi">◇</span><span class="mi-label">模型与路由</span></a>
+                        <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','安全与限额',this)"><span class="mi">✜</span><span class="mi-label">安全与限额</span></a>
+                        <a class="menu-item" href="#" data-page="feat_notify" data-root="1" onclick="return nav('feat_notify','控制台内容',this)"><span class="mi">▣</span><span class="mi-label">控制台内容</span></a>
+                        <a class="menu-item" href="#" data-page="feat_sync" data-root="1" onclick="return nav('feat_sync','运维操作',this)"><span class="mi">↯</span><span class="mi-label">运维操作</span></a>
+                    </div>
+                </div>
+                <a class="menu-item" href="#" data-page="feat_system_info" data-root="1" onclick="return nav('feat_system_info','系统信息',this)"><span class="mi">◎</span><span class="mi-label">系统信息</span></a>
+                <a class="menu-item" href="#" data-page="feat_about" onclick="return nav('feat_about','关于',this)"><span class="mi">ℹ</span><span class="mi-label">关于</span></a>
 
                 <div class="menu-group">更多</div>
-                <a class="menu-item" href="#" data-page="feat_tasks" data-root="1" onclick="return nav('feat_tasks','系统任务',this)"><span class="mi">⚡</span>系统任务</a>
-                <a class="menu-item" href="#" data-page="feat_batchtoken" data-root="1" onclick="return nav('feat_batchtoken','批量令牌',this)"><span class="mi">▤</span>批量令牌</a>
-                <a class="menu-item" href="#" data-page="feat_channelhealth" data-root="1" onclick="return nav('feat_channelhealth','渠道健康',this)"><span class="mi">♥</span>渠道健康</a>
-                <a class="menu-item" href="#" data-page="feat_audit" data-root="1" onclick="return nav('feat_audit','审计日志',this)"><span class="mi">☷</span>审计日志</a>
-                <a class="menu-item" href="#" data-page="feat_cost" data-root="1" onclick="return nav('feat_cost','费用明细',this)"><span class="mi">≌</span>费用明细</a>
-                <a class="menu-item" href="#" data-page="feat_invoice" data-root="1" onclick="return nav('feat_invoice','发票管理',this)"><span class="mi">⌸</span>发票管理</a>
-                <a class="menu-item" href="#" data-page="feat_groups" data-root="1" onclick="return nav('feat_groups','分组',this)"><span class="mi">▦</span>分组</a>
-                <a class="menu-item" href="#" data-page="feat_aliases" data-root="1" onclick="return nav('feat_aliases','模型别名',this)"><span class="mi">⧉</span>模型别名</a>
-                <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','安全设置',this)"><span class="mi">❖</span>安全设置</a>
-                <a class="menu-item" href="#" data-page="feat_notify" data-root="1" onclick="return nav('feat_notify','通知',this)"><span class="mi">≔</span>通知</a>
-                <a class="menu-item" href="#" data-page="feat_team" data-root="1" onclick="return nav('feat_team','团队',this)"><span class="mi">➤</span>团队</a>
-                <a class="menu-item" href="#" data-page="feat_stats" data-root="1" onclick="return nav('feat_stats','数据看板',this)"><span class="mi">▣</span>数据看板</a>
+                <a class="menu-item" href="#" data-page="feat_sync" data-root="1" onclick="return nav('feat_sync','上游同步',this)"><span class="mi">⇅</span><span class="mi-label">上游同步</span></a>
+                <a class="menu-item" href="#" data-page="feat_tasks" data-root="1" onclick="return nav('feat_tasks','系统任务',this)"><span class="mi">⚡</span><span class="mi-label">系统任务</span></a>
+                <a class="menu-item" href="#" data-page="feat_channelhealth" data-root="1" onclick="return nav('feat_channelhealth','渠道健康',this)"><span class="mi">♥</span><span class="mi-label">渠道健康</span></a>
+                <a class="menu-item" href="#" data-page="feat_batchtoken" data-root="1" onclick="return nav('feat_batchtoken','批量令牌',this)"><span class="mi">▤</span><span class="mi-label">批量令牌</span></a>
+                <a class="menu-item" href="#" data-page="feat_audit" data-root="1" onclick="return nav('feat_audit','审计日志',this)"><span class="mi">☷</span><span class="mi-label">审计日志</span></a>
+                <a class="menu-item" href="#" data-page="feat_cost" data-root="1" onclick="return nav('feat_cost','费用明细',this)"><span class="mi">≌</span><span class="mi-label">费用明细</span></a>
+                <a class="menu-item" href="#" data-page="feat_invoice" data-root="1" onclick="return nav('feat_invoice','发票管理',this)"><span class="mi">⌸</span><span class="mi-label">发票管理</span></a>
+                <a class="menu-item" href="#" data-page="feat_groups" data-root="1" onclick="return nav('feat_groups','分组',this)"><span class="mi">▦</span><span class="mi-label">分组</span></a>
+                <a class="menu-item" href="#" data-page="feat_aliases" data-root="1" onclick="return nav('feat_aliases','模型别名',this)"><span class="mi">⧉</span><span class="mi-label">模型别名</span></a>
+                <a class="menu-item" href="#" data-page="feat_vmodels" data-root="1" onclick="return nav('feat_vmodels','虚拟模型',this)"><span class="mi">⌬</span><span class="mi-label">虚拟模型</span></a>
+                <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','安全设置',this)"><span class="mi">❖</span><span class="mi-label">安全设置</span></a>
+                <a class="menu-item" href="#" data-page="feat_notify" data-root="1" onclick="return nav('feat_notify','通知',this)"><span class="mi">≔</span><span class="mi-label">通知</span></a>
+                <a class="menu-item" href="#" data-page="feat_team" data-root="1" onclick="return nav('feat_team','团队',this)"><span class="mi">➤</span><span class="mi-label">团队</span></a>
             </nav>
         </aside>
 
         <!-- 右侧主区域 -->
         <div class="main">
             <header class="header">
-                <div class="page-title" id="pageTitle">仪表盘</div>
-                <div class="header-right">
-                    <div class="user-chip" title="当前用户">
-                        <span class="user-avatar" id="avatar"></span>
-                        <span class="user-name" id="who"></span>
-                        <span class="role-tag" id="roleTag"></span>
+                <div class="header-left">
+                    <button class="btn btn-default sidebar-toggle" id="sideToggle" onclick="toggleSidebar()" title="折叠 / 展开侧边栏">☰</button>
+                    <div class="header-brand">
+                        <div class="brand-logo">API</div>
+                        <span class="brand-name">API 网关</span>
                     </div>
+                    <div class="header-divider"></div>
+                    <div class="page-title" id="pageTitle">仪表盘</div>
+                </div>
+                <div class="header-right">
                     <button class="btn btn-default" id="themeBtn" onclick="toggleTheme()" title="切换主题">🌙</button>
-                    <button class="btn btn-danger" onclick="logout()">退出</button>
+                    <div class="user-menu" id="userMenu">
+                        <button class="user-chip" onclick="toggleUserMenu()" title="账户菜单">
+                            <span class="user-avatar" id="avatar"></span>
+                            <span class="user-name" id="who"></span>
+                            <span class="role-tag" id="roleTag"></span>
+                            <span class="caret">▾</span>
+                        </button>
+                        <div class="user-dropdown" id="userDropdown">
+                            <a class="dropdown-item" href="#" onclick="closeUserMenu(); return nav('console','个人中心',document.querySelector('#menu .menu-item[data-page=console]'))">个人中心</a>
+                            <div class="dropdown-divider"></div>
+                            <a class="dropdown-item danger" href="#" onclick="logout()">退出登录</a>
+                        </div>
+                    </div>
                 </div>
             </header>
             <main class="content">
@@ -153,6 +163,35 @@
     }
     function logout(){ clearToken(); location.reload(); }
 
+    // 侧边栏折叠（icon-only rail，持久化）
+    function toggleSidebar(){
+        const app = document.getElementById('app');
+        app.classList.toggle('collapsed');
+        localStorage.setItem('gw_sidebar', app.classList.contains('collapsed') ? '1' : '0');
+        setTimeout(fitFrame, 240);
+    }
+    function toggleSub(el){
+        const app = document.getElementById('app');
+        if(app.classList.contains('collapsed')){
+            app.classList.remove('collapsed');
+            localStorage.setItem('gw_sidebar', '0');
+        }
+        el.parentElement.classList.toggle('open');
+        return false;
+    }
+
+    // 用户菜单
+    function toggleUserMenu(){
+        document.getElementById('userMenu').classList.toggle('open');
+    }
+    function closeUserMenu(){
+        document.getElementById('userMenu').classList.remove('open');
+    }
+    document.addEventListener('click', function(ev){
+        const m = document.getElementById('userMenu');
+        if(m && !m.contains(ev.target)) m.classList.remove('open');
+    });
+
     async function enterApp(){
         const r = await api('/api/user/self');
         if(!r.ok){ clearToken(); location.reload(); return; }
@@ -167,6 +206,16 @@
         tag.classList.toggle('role-tag-user', !isRoot);
         if(!isRoot){
             document.querySelectorAll('#menu .menu-item[data-root]').forEach(el=>el.style.display='none');
+            // 隐藏无可见子项的子菜单
+            document.querySelectorAll('#menu .menu-sub').forEach(ms=>{
+                let any = false;
+                ms.querySelectorAll('.submenu .menu-item').forEach(a=>{ if(a.style.display !== 'none') any = true; });
+                if(!any) ms.style.display = 'none';
+            });
+        }
+        // 恢复折叠状态
+        if(localStorage.getItem('gw_sidebar') === '1'){
+            document.getElementById('app').classList.add('collapsed');
         }
         // 默认进入仪表盘
         document.querySelectorAll('#menu .menu-item').forEach(a=>a.classList.remove('active'));
@@ -199,9 +248,12 @@
 
     // 导航：切换 iframe 页面并高亮菜单
     function nav(page, title, el){
+        document.querySelectorAll('#menu .menu-item').forEach(a=>a.classList.remove('active'));
         if(el){
-            document.querySelectorAll('#menu .menu-item').forEach(a=>a.classList.remove('active'));
             el.classList.add('active');
+            // 若位于子菜单内则展开所属子菜单
+            const ms = el.closest('.menu-sub');
+            if(ms) ms.classList.add('open');
         }
         document.getElementById('pageTitle').textContent = title;
         loadExt(page);
