@@ -7,11 +7,7 @@
   <link rel="stylesheet" href="/common.css">
   <script src="/common.js"></script>
   <style>
-    .muted { color: #718096; }
-    .small { font-size: 12px; color: #718096; }
-    .row-click { cursor: pointer; }
-    .row-click:hover td { background: #f7fafc; }
-    .preview { font-family: monospace; font-size: 12px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow: auto; }
+    .row-click:hover td { background: var(--row-hover); }
   </style>
 </head>
 <body>
@@ -45,12 +41,12 @@ function doSearch() { logPage = 1; loadLogs(); }
 
 function statusBadge(s) {
   const n = parseInt(s, 10);
-  let bg = '#e2e8f0', fg = '#4a5568';
-  if (n >= 200 && n < 300) { bg = '#c6f6d5'; fg = '#22543d'; }
-  else if (n >= 300 && n < 400) { bg = '#bee3f8'; fg = '#2c5282'; }
-  else if (n >= 400 && n < 500) { bg = '#feebc8'; fg = '#7b341e'; }
-  else if (n >= 500) { bg = '#fed7d7'; fg = '#9b2c2c'; }
-  return '<span class="status" style="background:' + bg + ';color:' + fg + '">' + escapeHtml(s) + '</span>';
+  let cls = 'badge-other';
+  if (n >= 200 && n < 300) cls = 'status-on';
+  else if (n >= 300 && n < 400) cls = 'badge-3xx';
+  else if (n >= 400 && n < 500) cls = 'badge-4xx';
+  else if (n >= 500) cls = 'badge-5xx';
+  return '<span class="status ' + cls + '">' + escapeHtml(s) + '</span>';
 }
 
 function pretty(text) {

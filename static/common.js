@@ -1,4 +1,4 @@
-// common.js — 扩展功能页共享助手（由 /index.html 的扩展面板通过 iframe 加载）
+// common.js — 扩展功能页共享助手（由管理台 index.html 通过 iframe 加载）
 const GW_TOKEN = 'gw_token';
 function getToken() { return localStorage.getItem(GW_TOKEN) || ''; }
 function setToken(t) { localStorage.setItem(GW_TOKEN, t); }
@@ -16,7 +16,7 @@ async function api(path, opts = {}) {
 async function ensureAuth() {
     const r = await api('/api/user/self');
     if (!r.ok) {
-        document.body.innerHTML = '<p style="padding:24px">未登录，请先 <a href="/index.html">返回管理后台登录</a>。</p>';
+        document.body.innerHTML = '<div class="card" style="max-width:420px;margin:60px auto"><p>未登录，请先 <a href="/index.html">返回管理后台登录</a>。</p></div>';
         throw new Error('no auth');
     }
     return r.json();
@@ -28,6 +28,19 @@ async function ensureAuth() {
         document.documentElement.classList.add('dark');
     }
 })();
+
+// 通知父窗口调整 iframe 高度（同源，直接测量即可）
+function notifyHeight() {
+    const h = Math.max(
+        document.body ? document.body.scrollHeight : 0,
+        document.documentElement ? document.documentElement.scrollHeight : 0
+    );
+    try {
+        if (window.parent && window.parent !== window && window.parent.postMessage) {
+            window.parent.postMessage({ type: 'gw_frame_height', height: h }, '*');
+        }
+    } catch (e) { /* ignore */ }
+}
 
 function $(id) { return document.getElementById(id); }
 function v(id) { return document.getElementById(id).value; }
@@ -43,3 +56,17 @@ async function logout() { clearToken(); location.href = '/index.html'; }
 function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// 页面加载后上报高度；DOM 变化时重新上报
+(function () {
+    if (window.self === window.top) return;
+    function report() { notifyHeight(); }
+    window.addEventListener('load', report);
+    if (typeof ResizeObserver !== 'undefined') {
+        try {
+            const ro = new ResizeObserver(report);
+            ro.observe(document.body);
+        } catch (e) { /* ignore */ }
+    }
+    setInterval(report, 1500);
+})();

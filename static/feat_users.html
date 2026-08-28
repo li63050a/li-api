@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>用户管理</h2>
+    <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>创建用户</h3>
+    <div class="form-group">
+      <input id="uName" placeholder="用户名">
+      <input id="uPwd" type="password" placeholder="密码">
+      <select id="uRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
+      <input id="uQuota" type="number" placeholder="额度(token, -1 不限)" value="-1">
+      <input id="uRate" type="number" placeholder="每分钟限流(0=不限)" value="0">
+      <button class="btn btn-success" onclick="addUser()">创建用户</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>用户列表</h3>
+    <table>
+      <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>已用/额度</th><th>操作</th></tr></thead>
+      <tbody id="userTable"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadUsers(){ const res=await api('/admin/users'); if(!res.ok)return; const us=await res.json();
+  document.getElementById('userTable').innerHTML=us.map(u=>`<tr><td>${u.id}</td><td>${escapeHtml(u.username)}</td><td>${u.role}</td>
+    <td><span class="status ${u.status?'status-on':'status-off'}">${u.status?'启用':'禁用'}</span></td>
+    <td>${escapeHtml(String(u.used))} / ${u.quota<0?'不限':escapeHtml(String(u.quota))}</td>
+    <td><button class="btn btn-link" onclick="toggleUser(${u.id},${u.status?0:1})">${u.status?'禁用':'启用'}</button>
+    <button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button></td></tr>`).join(''); }
+async function addUser(){ const data={username:v('uName'),password:v('uPwd'),role:v('uRole'),quota:parseInt(v('uQuota'))||-1,rate_limit:parseInt(v('uRate'))||0};
+  const res=await api('/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!res.ok){ alert('创建失败：'+(await res.text())); return; } loadUsers(); ['uName','uPwd'].forEach(i=>document.getElementById(i).value=''); }
+async function deleteUser(id){ if(!confirm('确认删除该用户？'))return; await api('/admin/users/'+id,{method:'DELETE'}); loadUsers(); }
+async function toggleUser(id,status){ await api('/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}); loadUsers(); }
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadUsers();
+})();
+</script>
+</body>
+</html>

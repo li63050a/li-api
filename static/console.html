@@ -7,19 +7,15 @@
   <link rel="stylesheet" href="/common.css">
   <script src="/common.js"></script>
   <style>
-    .card { margin-bottom: 14px; }
     .card h3 { margin-top: 0; }
-    .info-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-    .info-item { flex: 1 1 150px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
-    .info-label { color: #718096; font-size: 12px; margin-bottom: 4px; }
-    .info-value { font-size: 18px; font-weight: 700; color: #2b6cb0; word-break: break-all; }
-    .avatar { width: 56px; height: 56px; border-radius: 50%; background: #2b6cb0; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; flex: 0 0 auto; }
-    .ubar { height: 14px; background: #edf2f7; border-radius: 3px; overflow: hidden; min-width: 120px; }
-    .ubar-fill { height: 100%; background: #2b6cb0; border-radius: 3px; }
-    .muted { color: #718096; }
-    .small { font-size: 12px; color: #718096; }
-    .rec-code { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin: 2px 6px 2px 0; display: inline-block; }
-    .plan-row { display: flex; justify-content: space-between; align-items: center; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+    .info-item { flex: 1 1 150px; background: var(--th-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+    .info-label { color: var(--fg-2); font-size: 12px; margin-bottom: 4px; }
+    .info-value { font-size: 18px; font-weight: 700; color: var(--primary); word-break: break-all; }
+    .avatar { width: 56px; height: 56px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; flex: 0 0 auto; }
+    .ubar { height: 14px; background: var(--th-bg); border-radius: 3px; overflow: hidden; min-width: 120px; }
+    .ubar-fill { height: 100%; background: var(--primary); border-radius: 3px; }
+    .rec-code { font-family: monospace; background: var(--code-bg); padding: 2px 6px; border-radius: 4px; margin: 2px 6px 2px 0; display: inline-block; }
+    .plan-row { display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
     #trendCanvas { display: block; }
   </style>
 </head>
@@ -121,10 +117,12 @@
 let selfUser = '';
 let selfRole = '';
 
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
 function showMsg(id, text, ok) {
   const el = $(id);
   el.textContent = text;
-  el.style.color = ok ? '#38a169' : '#e53e3e';
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
 }
 
 async function loadAll() {
@@ -219,12 +217,12 @@ function drawTrend(list) {
   ctx.font = '10px sans-serif';
   for (let i = 0; i <= 4; i++) {
     const y = padT + ph - (i / 4) * ph;
-    ctx.strokeStyle = '#edf2f7';
+    ctx.strokeStyle = cssVar('--border');
     ctx.beginPath();
     ctx.moveTo(padL, y);
     ctx.lineTo(w - padR, y);
     ctx.stroke();
-    ctx.fillStyle = '#718096';
+    ctx.fillStyle = cssVar('--fg-2');
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(Math.round(max * i / 4).toLocaleString(), padL - 5, y);
@@ -233,10 +231,10 @@ function drawTrend(list) {
   items.forEach((it, i) => {
     const x = padL + (i + 0.5) * (pw / n);
     const hh = Math.max(1, (it.v / max) * ph);
-    ctx.fillStyle = '#2b6cb0';
+    ctx.fillStyle = cssVar('--primary');
     ctx.fillRect(x - bw / 2, padT + ph - hh, bw, hh);
     if (i % 2 === 0 || i === n - 1) {
-      ctx.fillStyle = '#718096';
+      ctx.fillStyle = cssVar('--fg-2');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText(it.label.slice(0, 10), x, padT + ph + 4);

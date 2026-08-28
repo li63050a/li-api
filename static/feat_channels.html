@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>渠道管理</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>渠道管理</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadChannels()">刷新</button>
+      <button class="btn btn-success" onclick="addChannel()">添加渠道</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>新增渠道</h3>
+    <div class="form-group">
+      <input id="cName" placeholder="名称">
+      <input id="cType" placeholder="类型(openai/azure/anthropic)" value="openai">
+      <input id="cBaseURL" placeholder="上游基地址">
+      <input id="cKeys" placeholder="上游密钥(逗号分隔,轮流)">
+    </div>
+    <div class="form-group">
+      <select id="cAuthType"><option value="bearer">Bearer</option><option value="header">Header</option><option value="query">Query</option></select>
+      <input id="cAuthKey" placeholder="认证键">
+      <input id="cModels" placeholder="支持模型(逗号/*)" value="*">
+      <input id="cModelMap" placeholder='模型映射 {"公开名":"上游名"}'>
+    </div>
+    <div class="form-group">
+      <input id="cGroup" placeholder="分组" value="default">
+      <input id="cPriority" type="number" placeholder="优先级" value="0">
+      <input id="cWeight" type="number" placeholder="权重" value="1">
+      <input id="cRateLimit" type="number" placeholder="每分钟限流" value="0">
+      <label><input type="checkbox" id="cStatus" checked> 启用</label>
+    </div>
+  </div>
+
+  <div id="groupOverview" style="margin:12px 0;color:var(--fg-2);font-size:13px"></div>
+
+  <div class="card">
+    <h3>渠道列表</h3>
+    <table>
+      <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>权重</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
+      <tbody id="channelTable"><tr><td colspan="11" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadChannels(){ const res=await api('/admin/channels'); if(!res.ok) return; const cs=await res.json();
+  document.getElementById('channelTable').innerHTML = cs.map(c=>`<tr><td>${c.id}</td><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.type)}</td><td>${escapeHtml(c.base_url)}</td>
+    <td>${escapeHtml(c.models)}</td><td>${escapeHtml(c.group)}</td><td>${c.priority}</td><td>${c.weight}</td>
+    <td><span class="status ${c.status?'status-on':'status-off'}">${c.status?'启用':'禁用'}</span></td>
+    <td><button class="btn btn-link" onclick="testChannel(${c.id})">测试</button></td>
+    <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join('');
+  const groups={};
+  cs.forEach(c=>{ (groups[c.group]=groups[c.group]||[]).push(c); });
+  const keys=Object.keys(groups);
+  document.getElementById('groupOverview').innerHTML = keys.length
+    ? '分组概览：'+keys.map(g=>`<b>${escapeHtml(g)}</b> [`+groups[g].map(c=>`${escapeHtml(c.name)}(w${c.weight},p${c.priority})`).join('、')+`]`).join('　')
+    : ''; }
+async function testChannel(id){ try{ const res=await api('/admin/channels/test/'+id,{method:'POST'}); const d=await res.json();
+  alert('状态码: '+d.status+'\n结果: '+(d.success?'成功 ✓':'失败 ✗')+'\n'+(d.message||'')); }
+  catch(e){ alert('测试请求出错: '+e); } }
+async function addChannel(){ const data={name:v('cName'),type:v('cType'),base_url:v('cBaseURL'),keys:v('cKeys'),
+  auth_type:v('cAuthType'),auth_key:v('cAuthKey'),models:v('cModels'),model_mapping:v('cModelMap'),group:v('cGroup'),
+  priority:parseInt(v('cPriority'))||0,weight:parseInt(v('cWeight'))||1,rate_limit:parseInt(v('cRateLimit'))||0,
+  status:document.getElementById('cStatus').checked?1:0};
+  const res=await api('/admin/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!res.ok){ alert('添加失败：'+(await res.text())); return; }
+  loadChannels(); }
+async function deleteChannel(id){ if(!confirm('确认删除？'))return; await api('/admin/channels/'+id,{method:'DELETE'}); loadChannels(); }
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadChannels();
+})();
+</script>
+</body>
+</html>

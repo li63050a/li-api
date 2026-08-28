@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>路由管理（旧）</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>路由管理（旧）</h2>
+    <button class="btn btn-primary" onclick="loadRoutes()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>新增路由</h3>
+    <div class="form-group">
+      <input id="name" placeholder="名称">
+      <input id="prefix" placeholder="前缀，如 /v1">
+      <input id="upstream" placeholder="上游地址，如 https://api.openai.com">
+      <select id="authType"><option value="none">无认证</option><option value="bearer">Bearer Token</option><option value="header">Header</option><option value="query">Query</option></select>
+      <input id="authKey" placeholder="认证键(header名)">
+    </div>
+    <div class="form-group">
+      <input id="authValue" placeholder="认证值(单密钥)">
+      <input id="authValues" placeholder="多密钥(逗号分隔,轮流)">
+      <input id="rateLimit" type="number" placeholder="每分钟限流" value="0">
+      <label><input type="checkbox" id="needApiKey"> 需令牌</label>
+      <button class="btn btn-success" onclick="addRoute()">添加</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>路由列表</h3>
+    <table>
+      <thead><tr><th>ID</th><th>名称</th><th>前缀</th><th>上游地址</th><th>认证</th><th>多密钥</th><th>限流</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="routeTable"><tr><td colspan="9" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadRoutes(){ const res=await api('/admin/routes'); if(!res.ok) return; const rs=await res.json();
+  document.getElementById('routeTable').innerHTML = rs.map(r=>`<tr><td>${r.id}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.prefix)}</td><td>${escapeHtml(r.upstream_url)}</td>
+    <td>${escapeHtml(r.auth_type)} ${r.auth_key?'('+escapeHtml(r.auth_key)+')':''}</td><td>${r.auth_values?'✔':'-'}</td><td>${r.rate_limit||'不限'}</td>
+    <td><span class="status ${r.enable?'status-on':'status-off'}">${r.enable?'启用':'禁用'}</span></td>
+    <td><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></td></tr>`).join(''); }
+async function addRoute(){ const data={name:v('name'),prefix:v('prefix'),upstream_url:v('upstream'),
+  auth_type:v('authType'),auth_key:v('authKey'),auth_value:v('authValue'),auth_values:v('authValues'),
+  rate_limit:parseInt(v('rateLimit'))||0,need_api_key:document.getElementById('needApiKey').checked,enable:true};
+  await api('/admin/routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); loadRoutes();
+  ['name','prefix','upstream','authKey','authValue','authValues'].forEach(i=>document.getElementById(i).value=''); }
+async function deleteRoute(id){ if(!confirm('确认删除？'))return; await api('/admin/routes/'+id,{method:'DELETE'}); loadRoutes(); }
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadRoutes();
+})();
+</script>
+</body>
+</html>

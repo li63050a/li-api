@@ -8,30 +8,12 @@
   <script src="/common.js"></script>
   <style>
     .stat-cards { display: flex; gap: 12px; margin: 12px 0 18px; flex-wrap: wrap; }
-    .stat-card { flex: 1 1 150px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }
-    .stat-title { color: #718096; font-size: 13px; margin-bottom: 4px; }
-    .stat-value { font-size: 24px; font-weight: 700; color: #2b6cb0; }
-    .card { margin-bottom: 16px; }
-    .card h3 { margin-top: 0; }
-    .ubar { height: 14px; background: #edf2f7; border-radius: 3px; overflow: hidden; min-width: 140px; }
-    .ubar-fill { height: 100%; background: #2b6cb0; border-radius: 3px; }
-    .ubar-fill-cost { background: #dd6b20; }
-    .muted { color: #718096; }
-    .badge { font-size: 12px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
-    .badge-2xx { background: #c6f6d5; color: #22543d; }
-    .badge-3xx { background: #bee3f8; color: #2c5282; }
-    .badge-4xx { background: #feebc8; color: #7b341e; }
-    .badge-5xx { background: #fed7d7; color: #9b2c2c; }
-    .badge-other { background: #e2e8f0; color: #4a5568; }
-    .legend { display: flex; gap: 16px; color: #718096; font-size: 13px; margin: 6px 0 10px; }
+    .stat-card { flex: 1 1 150px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+    .stat-title { color: var(--fg-2); font-size: 13px; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--primary); }
+    .legend { display: flex; gap: 16px; color: var(--fg-2); font-size: 13px; margin: 6px 0 10px; }
     .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
     #trendCanvas { display: block; }
-    .live-list { height: 260px; overflow: auto; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
-    .live-item { padding: 3px 0; border-bottom: 1px solid #edf2f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .live-time { color: #718096; }
-    .live-cost { color: #dd6b20; }
-    .live-dur { color: #718096; }
-    .live-status { color: #718096; font-size: 13px; margin-left: 10px; }
   </style>
 </head>
 <body>
@@ -64,8 +46,8 @@
   <div class="card">
     <h3>近 14 天请求 / 成本趋势</h3>
     <div class="legend">
-      <span><i style="background:#2b6cb0"></i>请求数</span>
-      <span><i style="background:#dd6b20"></i>成本</span>
+      <span><i style="background:var(--primary)"></i>请求数</span>
+      <span><i style="background:var(--warning)"></i>成本</span>
     </div>
     <div id="trendWrap" style="display:none"><canvas id="trendCanvas"></canvas></div>
     <div id="trendChart" class="muted">加载中…</div>
@@ -125,6 +107,7 @@
 <script>
 function fmt(v) { return Number(v || 0).toLocaleString(); }
 function fmtOrDash(v) { return v == null || v === '' ? '—' : fmt(v); }
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
 function statusBadge(s) {
   const n = parseInt(s, 10);
@@ -210,12 +193,12 @@ function drawTrend(list) {
   const steps = 4;
   for (let i = 0; i <= steps; i++) {
     const y = padT + ph - (i / steps) * ph;
-    ctx.strokeStyle = '#edf2f7';
+    ctx.strokeStyle = cssVar('--border');
     ctx.beginPath();
     ctx.moveTo(padL, y);
     ctx.lineTo(w - padR, y);
     ctx.stroke();
-    ctx.fillStyle = '#718096';
+    ctx.fillStyle = cssVar('--fg-2');
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(fmt(Math.round(maxReq * i / steps)), padL - 6, y);
@@ -224,7 +207,7 @@ function drawTrend(list) {
   }
 
   const step = Math.ceil(n / 8);
-  ctx.fillStyle = '#718096';
+  ctx.fillStyle = cssVar('--fg-2');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   items.forEach((it, i) => {
@@ -253,10 +236,10 @@ function drawTrend(list) {
       ctx.fill();
     });
   }
-  drawLine(it => it.req, pyReq, '#2b6cb0');
-  drawLine(it => it.cost, pyCost, '#dd6b20');
+  drawLine(it => it.req, pyReq, cssVar('--primary'));
+  drawLine(it => it.cost, pyCost, cssVar('--warning'));
 
-  ctx.fillStyle = '#718096';
+  ctx.fillStyle = cssVar('--fg-2');
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';

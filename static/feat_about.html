@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>关于</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="card" style="max-width:760px;margin:24px auto">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+      <div class="brand-logo" style="width:52px;height:52px;font-size:26px;border-radius:10px">API</div>
+      <div>
+        <h2 style="margin:0">API 网关管理控制台</h2>
+        <div class="muted">API Gateway Admin Console · v0.0.1</div>
+      </div>
+    </div>
+
+    <p>本管理台用于集中管理 API 网关的令牌、渠道、用户、日志、消费统计与系统设置。
+      界面风格参考 new-api 管理控制台，全部为纯 HTML / CSS / JavaScript，无外部依赖，可离线使用。</p>
+
+    <h3>功能概览</h3>
+    <ul style="line-height:2">
+      <li><b>令牌管理</b>：创建 / 编辑 / 删除 / 批量生成令牌，设置额度、分组与模型范围。</li>
+      <li><b>渠道管理</b>：维护上游渠道，配置认证方式、模型映射、优先级与权重，支持在线测试。</li>
+      <li><b>日志与统计</b>：请求日志检索、消费统计、费用明细与渠道健康监控。</li>
+      <li><b>用户与充值</b>：用户管理、充值码生成与兑换、额度调整、团队与邀请。</li>
+      <li><b>模型配置</b>：模型价格倍率、分组倍率与模型别名。</li>
+      <li><b>系统设置</b>：站点信息、OAuth 安全、通知渠道、2FA 两步验证。</li>
+    </ul>
+
+    <h3>支持</h3>
+    <p class="muted">如需帮助，请联系系统管理员。</p>
+  </div>
+</div>
+</body>
+</html>

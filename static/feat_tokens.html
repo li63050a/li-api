@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>令牌管理</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>令牌管理</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
+      <button class="btn btn-default" onclick="exportTokens()">批量导出</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>生成 / 编辑令牌</h3>
+    <div class="form-group">
+      <input id="tName" placeholder="名称/备注">
+      <input id="tGroup" placeholder="分组" value="default">
+      <input id="tQuota" type="number" placeholder="额度(token数, -1 不限)" value="-1">
+      <label><input type="checkbox" id="tUnlimited"> 不限</label>
+    </div>
+    <div class="form-group">
+      <input id="tExpiredAt" type="datetime-local" placeholder="过期时间(留空=永不过期)">
+      <input id="tModels" placeholder="允许模型(逗号分隔,留空=全部)">
+      <button class="btn btn-success" onclick="addToken()">生成令牌</button>
+      <button id="tUpdateBtn" class="btn btn-warning" style="display:none" onclick="updateToken()">更新令牌</button>
+      <span id="editHint" style="color:var(--primary)"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>令牌列表</h3>
+    <table>
+      <thead><tr><th>Key</th><th>名称</th><th>分组</th><th>模型</th><th>已用/额度</th><th>过期</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="tokenTable"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let tokenList=[];
+async function loadTokens(){ const res=await api('/admin/tokens'); if(!res.ok) return; const ts=await res.json(); tokenList=ts;
+  document.getElementById('tokenTable').innerHTML = ts.map(t=>`<tr><td><code>${escapeHtml(t.key)}</code></td><td>${escapeHtml(t.name||'-')}</td><td>${escapeHtml(t.group||'default')}</td>
+    <td>${escapeHtml(t.models||'全部')}</td>
+    <td>${escapeHtml(String(t.used))} / ${t.unlimited?'不限':(t.quota<0?'不限':escapeHtml(String(t.quota)))}</td>
+    <td>${t.expired_at?escapeHtml(t.expired_at):'永久'}</td>
+    <td><span class="status ${t.status?'status-on':'status-off'}">${t.status?'启用':'禁用'}</span></td>
+    <td><button class="btn btn-link" onclick="editToken('${escapeHtml(t.key)}')">编辑</button>
+    <button class="btn btn-danger" onclick="deleteToken('${escapeHtml(t.key)}')">删除</button></td></tr>`).join(''); }
+let editingKey=null;
+function isoToLocal(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
+function editToken(key){ const t=tokenList.find(x=>x.key===key); if(!t) return; editingKey=key;
+  document.getElementById('tName').value=t.name||''; document.getElementById('tGroup').value=t.group||'default';
+  document.getElementById('tQuota').value=t.unlimited?-1:(t.quota<0?-1:t.quota);
+  document.getElementById('tUnlimited').checked=t.unlimited===1; document.getElementById('tModels').value=t.models||'';
+  document.getElementById('tExpiredAt').value=isoToLocal(t.expired_at);
+  document.getElementById('tUpdateBtn').style.display=''; document.getElementById('editHint').textContent='编辑中：'+key.slice(0,8)+'…'; }
+async function updateToken(){ if(!editingKey) return;
+  const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
+    quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
+    expired_at:exp?new Date(exp).toISOString():null, models:v('tModels'), status:1};
+  const res=await api('/admin/tokens/'+editingKey,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!res.ok){ alert('更新失败：'+(await res.text())); return; }
+  editingKey=null; document.getElementById('tUpdateBtn').style.display='none'; document.getElementById('editHint').textContent='';
+  ['tName','tGroup','tModels','tExpiredAt'].forEach(i=>document.getElementById(i).value=''); loadTokens(); }
+async function exportTokens(){ const res=await api('/admin/tokens'); const ts=await res.json();
+  const blob=new Blob([JSON.stringify(ts,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='tokens.json'; a.click(); URL.revokeObjectURL(a.href); }
+async function addToken(){ const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
+  quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
+  expired_at:exp?new Date(exp).toISOString():null, models:v('tModels')};
+  const res=await api('/admin/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const t=await res.json(); alert('已生成令牌：\n'+t.key); loadTokens(); document.getElementById('tName').value=''; document.getElementById('tModels').value=''; document.getElementById('tExpiredAt').value=''; }
+async function deleteToken(key){ if(!confirm('确认删除该令牌？'))return; await api('/admin/tokens/'+key,{method:'DELETE'}); loadTokens(); }
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadTokens();
+})();
+</script>
+</body>
+</html>

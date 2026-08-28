@@ -67,7 +67,7 @@ async function createInvoice() {
     const r = await api('/api/billing/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { msg.textContent = '创建失败：' + (d.error || d.message || r.status); return; }
-    msg.style.color = '#38a169';
+    msg.style.color = 'var(--success)';
     msg.textContent = '已创建发票 ' + month;
     $('invMonth').value = '';
     $('invNote').value = '';

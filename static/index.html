@@ -1,254 +1,113 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API 网关管理</title>
+    <title>API 网关管理控制台</title>
+    <link rel="stylesheet" href="/common.css">
     <style>
-        :root {
-            --bg: #f5f7fa; --fg: #2d3748; --card-bg: #ffffff; --panel-bg: #ffffff;
-            --border: #cbd5e0; --row-border: #eaeef2; --th-bg: #f9fafc;
-            --accent: #2b6cb0; --tab-bg: #e2e8f0; --code-bg: #f1f5f9;
-            --status-on-bg: #c6f6d5; --status-on-fg: #22543d;
-            --status-off-bg: #fed7d7; --status-off-fg: #9b2c2c;
-            --muted: #718096;
-        }
-        html.dark {
-            --bg: #111827; --fg: #e2e8f0; --card-bg: #1f2937; --panel-bg: #1f2937;
-            --border: #4b5563; --row-border: #374151; --th-bg: #161d2b;
-            --accent: #63b3ed; --tab-bg: #374151; --code-bg: #0f172a;
-            --status-on-bg: #22543d; --status-on-fg: #c6f6d5;
-            --status-off-bg: #7f1d1d; --status-off-fg: #fed7d7;
-            --muted: #9ca3af;
-        }
-        body { font-family: sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 20px; }
-        .container { max-width: 1200px; margin: auto; }
-        .card { background: var(--card-bg); padding:24px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.05); max-width:360px; margin:80px auto; }
-        .card input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; box-sizing:border-box; background: var(--card-bg); color: var(--fg); }
-        .card button { width:48%; padding:10px; border:none; border-radius:6px; cursor:pointer; color:#fff; }
-        .tabs { margin-bottom: 16px; }
-        .tabs button { padding: 8px 18px; border: none; background: var(--tab-bg); color: var(--fg); cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; }
-        .tabs button.active { background: var(--accent); color: #fff; }
-        .panel { display: none; background: var(--panel-bg); padding: 16px; border-radius: 0 8px 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .panel.active { display: block; }
-        table { width: 100%; border-collapse: collapse; background: var(--panel-bg); border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-top: 12px; }
-        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--row-border); }
-        th { background: var(--th-bg); font-weight: 600; }
-        .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-        .btn-primary { background: #2b6cb0; color: white; }
-        .btn-danger { background: #e53e3e; color: white; }
-        .btn-success { background: #38a169; color: white; }
-        .btn-dark { background: #4a5568; color: white; }
-        .form-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
-        .form-group input, .form-group select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; flex: 1 1 150px; background: var(--panel-bg); color: var(--fg); }
-        .status { font-size: 12px; padding: 2px 8px; border-radius: 12px; }
-        .status-on { background: var(--status-on-bg); color: var(--status-on-fg); }
-        .status-off { background: var(--status-off-bg); color: var(--status-off-fg); }
-        code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; }
-        .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+        body { padding: 0; }
+        .login-wrap { min-height: 100vh; }
     </style>
 </head>
 <body>
-<div class="container">
     <!-- 登录/注册 -->
-    <div id="auth" class="card">
-        <h2 style="margin-top:0">API 网关</h2>
-        <input id="u" placeholder="用户名" />
-        <input id="p" type="password" placeholder="密码" />
-        <div style="display:flex; justify-content:space-between">
-            <button class="btn btn-primary" onclick="login()">登录</button>
-            <button class="btn btn-success" onclick="register()">注册</button>
+    <div id="auth" class="login-wrap">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="brand-logo">API</div>
+                <div>
+                    <div class="login-title">API 网关</div>
+                    <div class="login-sub">管理控制台</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <input id="u" placeholder="用户名" />
+            </div>
+            <div class="form-group">
+                <input id="p" type="password" placeholder="密码" />
+            </div>
+            <div class="login-btns">
+                <button class="btn btn-primary" onclick="login()">登录</button>
+                <button class="btn btn-default" onclick="register()">注册</button>
+            </div>
+            <p id="authMsg" class="msg" style="margin:12px 0 0"></p>
         </div>
-        <p id="authMsg" style="color:#e53e3e;min-height:18px"></p>
     </div>
 
     <!-- 主界面 -->
-    <div id="app" style="display:none">
-        <div class="topbar">
-            <strong id="who"></strong>
-            <div>
-                <button class="btn btn-dark" onclick="toggleTheme()" id="themeBtn">🌙</button>
-                <button class="btn btn-dark" onclick="logout()">退出</button>
-            </div>
-        </div>
-        <div class="tabs">
-            <button class="active" onclick="showTab('routes')">路由(旧)</button>
-            <button onclick="showTab('channels')">渠道</button>
-            <button onclick="showTab('tokens')">令牌</button>
-            <button id="tabDashboard" onclick="showTab('dashboard')">仪表盘</button>
-            <button id="tabSetting" onclick="showTab('settings')" style="display:none">设置</button>
-            <button id="tabUsers" onclick="showTab('users')" style="display:none">用户</button>
-            <button id="tabRedemption" onclick="showTab('redemption')" style="display:none">充值码</button>
-            <button id="tabLogs" onclick="showTab('logs')" style="display:none">日志</button>
-            <button id="tabExt" onclick="showTab('ext')" style="display:none">扩展</button>
-        </div>
-
-        <div id="routes" class="panel active">
-            <div class="form-group">
-                <input id="name" placeholder="名称" />
-                <input id="prefix" placeholder="前缀，如 /v1" />
-                <input id="upstream" placeholder="上游地址，如 https://api.openai.com" />
-                <select id="authType"><option value="none">无认证</option><option value="bearer">Bearer Token</option><option value="header">Header</option><option value="query">Query</option></select>
-                <input id="authKey" placeholder="认证键(header名)" />
-                <input id="authValue" placeholder="认证值(单密钥)" />
-                <input id="authValues" placeholder="多密钥(逗号分隔,轮流)" />
-                <input id="rateLimit" type="number" placeholder="每分钟限流" value="0" />
-                <label><input type="checkbox" id="needApiKey" /> 需令牌</label>
-                <button class="btn btn-success" onclick="addRoute()">添加</button>
-                <button class="btn btn-primary" onclick="loadRoutes()">刷新</button>
-            </div>
-            <table><thead><tr><th>ID</th><th>名称</th><th>前缀</th><th>上游地址</th><th>认证</th><th>多密钥</th><th>限流</th><th>状态</th><th>操作</th></tr></thead>
-                <tbody id="routeTable"></tbody></table>
-        </div>
-
-        <div id="channels" class="panel">
-            <div class="form-group">
-                <input id="cName" placeholder="名称" />
-                <input id="cType" placeholder="类型(openai/azure/anthropic)" />
-                <input id="cBaseURL" placeholder="上游基地址" />
-                <input id="cKeys" placeholder="上游密钥(逗号分隔,轮流)" />
-                <select id="cAuthType"><option value="bearer">Bearer</option><option value="header">Header</option><option value="query">Query</option></select>
-                <input id="cAuthKey" placeholder="认证键" />
-                <input id="cModels" placeholder="支持模型(逗号/*)" value="*" />
-                <input id="cModelMap" placeholder='模型映射 {"公开名":"上游名"}' />
-                <input id="cGroup" placeholder="分组" value="default" />
-                <input id="cPriority" type="number" placeholder="优先级" value="0" />
-                <input id="cWeight" type="number" placeholder="权重" value="1" />
-                <input id="cRateLimit" type="number" placeholder="每分钟限流" value="0" />
-                <label><input type="checkbox" id="cStatus" checked /> 启用</label>
-                <button class="btn btn-success" onclick="addChannel()">添加</button>
-                <button class="btn btn-primary" onclick="loadChannels()">刷新</button>
-            </div>
-            <div id="groupOverview" style="margin:8px 0;color:#4a5568;font-size:13px"></div>
-            <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>权重</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
-                <tbody id="channelTable"></tbody></table>
-        </div>
-
-        <div id="tokens" class="panel">
-            <div class="form-group">
-                <input id="tName" placeholder="名称/备注" />
-                <input id="tGroup" placeholder="分组" value="default" />
-                <input id="tQuota" type="number" placeholder="额度(token数, -1 不限)" value="-1" />
-                <label><input type="checkbox" id="tUnlimited" /> 不限</label>
-                <input id="tExpiredAt" type="datetime-local" placeholder="过期时间(留空=永不过期)" />
-                <input id="tModels" placeholder="允许模型(逗号分隔,留空=全部)" />
-                <button class="btn btn-success" onclick="addToken()">生成令牌</button>
-                <button id="tUpdateBtn" class="btn btn-warning" style="display:none" onclick="updateToken()">更新令牌</button>
-                <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
-                <button class="btn btn-dark" onclick="exportTokens()">批量导出</button>
-                <span id="editHint" style="color:#2b6cb0"></span>
-            </div>
-            <table><thead><tr><th>Key</th><th>名称</th><th>分组</th><th>模型</th><th>已用/额度</th><th>过期</th><th>状态</th><th>操作</th></tr></thead>
-                <tbody id="tokenTable"></tbody></table>
-        </div>
-
-        <div id="settings" class="panel">
-            <div class="form-group">
-                <select id="sMode"><option value="self">自用 (self)</option><option value="biz">营业 (biz)</option></select>
-                <label><input type="checkbox" id="sOpenReg" /> 允许公开注册</label>
-            </div>
-            <div class="form-group">
-                <span>模型倍率(JSON，营业模式 prompt 计费用):</span>
-                <input id="sRatio" style="flex-basis:100%" placeholder='{"gpt-4o":1,"claude":2}' />
-            </div>
-            <div class="form-group">
-                <span>生成倍率(JSON，营业模式 completion 计费用):</span>
-                <input id="sCompRatio" style="flex-basis:100%" placeholder='{"gpt-4o":2,"claude":3}' />
-            </div>
-            <details style="margin:8px 0">
-                <summary style="cursor:pointer">SMTP / 通知设置</summary>
-                <div class="form-group">
-                    <input id="sSmtpHost" placeholder="SMTP 服务器" />
-                    <input id="sSmtpPort" type="number" placeholder="端口(如 587)" value="587" />
+    <div id="app" class="layout" style="display:none">
+        <!-- 左侧边栏 -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">API</div>
+                <div>
+                    <div class="brand-name">API 网关</div>
+                    <div class="brand-sub">管理控制台</div>
                 </div>
-                <div class="form-group">
-                    <input id="sSmtpUser" placeholder="SMTP 用户名" />
-                    <input id="sSmtpPass" type="password" placeholder="SMTP 密码" />
+            </div>
+            <nav class="menu" id="menu">
+                <div class="menu-group">首页</div>
+                <a class="menu-item" href="#" data-page="feat_usage" onclick="return nav('feat_usage','控制台',this)"><span class="mi">⌂</span>控制台</a>
+
+                <div class="menu-group">令牌</div>
+                <a class="menu-item" href="#" data-page="feat_tokens" data-root="1" onclick="return nav('feat_tokens','令牌管理',this)"><span class="mi">⬡</span>令牌管理</a>
+                <a class="menu-item" href="#" data-page="feat_batchtoken" data-root="1" onclick="return nav('feat_batchtoken','批量令牌',this)"><span class="mi">▤</span>批量令牌</a>
+
+                <div class="menu-group">渠道</div>
+                <a class="menu-item" href="#" data-page="feat_channels" data-root="1" onclick="return nav('feat_channels','渠道管理',this)"><span class="mi">⇄</span>渠道管理</a>
+                <a class="menu-item" href="#" data-page="feat_channelhealth" data-root="1" onclick="return nav('feat_channelhealth','渠道健康',this)"><span class="mi">♥</span>渠道健康</a>
+
+                <div class="menu-group">日志</div>
+                <a class="menu-item" href="#" data-page="feat_logs" data-root="1" onclick="return nav('feat_logs','请求日志',this)"><span class="mi">☰</span>请求日志</a>
+                <a class="menu-item" href="#" data-page="feat_audit" data-root="1" onclick="return nav('feat_audit','审计日志',this)"><span class="mi">☷</span>审计日志</a>
+
+                <div class="menu-group">消费</div>
+                <a class="menu-item" href="#" data-page="feat_stats" data-root="1" onclick="return nav('feat_stats','消费统计',this)"><span class="mi">⌁</span>消费统计</a>
+                <a class="menu-item" href="#" data-page="feat_cost" data-root="1" onclick="return nav('feat_cost','费用明细',this)"><span class="mi">≌</span>费用明细</a>
+                <a class="menu-item" href="#" data-page="feat_invoice" data-root="1" onclick="return nav('feat_invoice','发票管理',this)"><span class="mi">⌸</span>发票管理</a>
+
+                <div class="menu-group">用户</div>
+                <a class="menu-item" href="#" data-page="feat_users" data-root="1" onclick="return nav('feat_users','用户管理',this)"><span class="mi">◉</span>用户管理</a>
+                <a class="menu-item" href="#" data-page="feat_billing" onclick="return nav('feat_billing','充值/兑换码',this)"><span class="mi">⟳</span>充值/兑换码</a>
+                <a class="menu-item" href="#" data-page="feat_team" data-root="1" onclick="return nav('feat_team','邀请/团队',this)"><span class="mi">➤</span>邀请/团队</a>
+
+                <div class="menu-group">模型</div>
+                <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型价格',this)"><span class="mi">♢</span>模型价格</a>
+                <a class="menu-item" href="#" data-page="feat_groups" data-root="1" onclick="return nav('feat_groups','分组',this)"><span class="mi">▦</span>分组</a>
+                <a class="menu-item" href="#" data-page="feat_aliases" data-root="1" onclick="return nav('feat_aliases','模型别名',this)"><span class="mi">⧉</span>模型别名</a>
+                <a class="menu-item" href="#" data-page="feat_testchat" onclick="return nav('feat_testchat','模型测试',this)"><span class="mi">✎</span>模型测试</a>
+
+                <div class="menu-group">设置</div>
+                <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','OAuth/安全',this)"><span class="mi">❖</span>OAuth/安全</a>
+                <a class="menu-item" href="#" data-page="feat_notify" data-root="1" onclick="return nav('feat_notify','通知',this)"><span class="mi">≔</span>通知</a>
+                <a class="menu-item" href="#" data-page="feat_site" data-root="1" onclick="return nav('feat_site','系统设置',this)"><span class="mi">⚙</span>系统设置</a>
+                <a class="menu-item" href="#" data-page="console" onclick="return nav('console','个人中心',this)"><span class="mi">☺</span>个人中心</a>
+                <a class="menu-item" href="#" data-page="feat_routes" data-root="1" onclick="return nav('feat_routes','路由(旧)',this)"><span class="mi">⌘</span>路由(旧)</a>
+                <a class="menu-item" href="#" data-page="feat_about" onclick="return nav('feat_about','关于',this)"><span class="mi">ℹ</span>关于</a>
+            </nav>
+        </aside>
+
+        <!-- 右侧主区域 -->
+        <div class="main">
+            <header class="header">
+                <div class="page-title" id="pageTitle">控制台</div>
+                <div class="header-right">
+                    <div class="user-chip" title="当前用户">
+                        <span class="user-avatar" id="avatar"></span>
+                        <span class="user-name" id="who"></span>
+                        <span class="role-tag" id="roleTag"></span>
+                    </div>
+                    <button class="btn btn-default" id="themeBtn" onclick="toggleTheme()" title="切换主题">🌙</button>
+                    <button class="btn btn-danger" onclick="logout()">退出</button>
                 </div>
-                <div class="form-group">
-                    <input id="sSmtpFrom" placeholder="发件人(留空=用户名)" />
-                    <input id="sNotifyEmail" placeholder="通知接收邮箱" />
-                    <button class="btn btn-dark" onclick="testEmail()">发送测试邮件</button>
-                </div>
-            </details>
-            <button class="btn btn-success" onclick="saveSetting()">保存设置</button>
-            <button class="btn btn-primary" onclick="loadSetting()">刷新</button>
-            <button class="btn btn-dark" onclick="loadPresets()">加载预设价格</button>
-        </div>
-
-        <div id="dashboard" class="panel">
-            <div id="dashCards" style="display:flex;flex-wrap:wrap;gap:12px"></div>
-            <p style="color:#718096;font-size:13px" id="dashFoot"></p>
-        </div>
-
-        <div id="users" class="panel">
-            <div class="form-group">
-                <input id="uName" placeholder="用户名" />
-                <input id="uPwd" type="password" placeholder="密码" />
-                <select id="uRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
-                <input id="uQuota" type="number" placeholder="额度(token, -1 不限)" value="-1" />
-                <input id="uRate" type="number" placeholder="每分钟限流(0=不限)" value="0" />
-                <button class="btn btn-success" onclick="addUser()">创建用户</button>
-                <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
-            </div>
-            <table><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>已用/额度</th><th>操作</th></tr></thead>
-                <tbody id="userTable"></tbody></table>
-        </div>
-
-        <div id="redemption" class="panel">
-            <div class="form-group">
-                <input id="rQuota" type="number" placeholder="每张额度" value="100000" />
-                <input id="rCount" type="number" placeholder="生成数量" value="1" />
-                <button class="btn btn-success" onclick="createRedemptions()">生成充值码</button>
-                <button class="btn btn-primary" onclick="loadRedemptions()">刷新</button>
-            </div>
-            <div id="rCodes" style="margin:8px 0;color:#22543d"></div>
-            <table><thead><tr><th>充值码</th><th>额度</th><th>状态</th><th>生成者</th><th>兑换者</th></tr></thead>
-                <tbody id="redemptionTable"></tbody></table>
-            <hr/>
-            <div class="form-group">
-                <input id="redeemCode" placeholder="输入充值码兑换额度" />
-                <button class="btn btn-dark" onclick="redeemCode()">兑换</button>
-            </div>
-        </div>
-
-        <div id="logs" class="panel">
-            <div class="form-group">
-                <input id="logModel" placeholder="按模型筛选" />
-                <input id="logStatus" placeholder="按状态码筛选" />
-                <input id="logGroup" placeholder="按分组筛选" />
-                <button class="btn btn-primary" onclick="loadLogs()">查询</button>
-                <span id="logPager"></span>
-            </div>
-            <table><thead><tr><th>时间</th><th>方法</th><th>路径</th><th>模型</th><th>分组</th><th>令牌</th><th>状态</th><th>Token</th><th>耗时(ms)</th></tr></thead>
-                <tbody id="logTable"></tbody></table>
-        </div>
-
-        <div id="ext" class="panel">
-            <div class="tabs" id="extTabs">
-                <button class="active" onclick="loadExt('feat_usage')">用量统计</button>
-                <button onclick="loadExt('feat_site')">站点设置</button>
-                <button onclick="loadExt('feat_models')">模型价格</button>
-                <button onclick="loadExt('feat_audit')">审计日志</button>
-                <button onclick="loadExt('feat_batchtoken')">批量令牌</button>
-                <button onclick="loadExt('feat_channelhealth')">渠道健康</button>
-                <button onclick="loadExt('feat_billing')">账单记录</button>
-                <button onclick="loadExt('feat_security')">安全设置</button>
-                <button onclick="loadExt('feat_notify')">通知设置</button>
-                <button onclick="loadExt('feat_aliases')">模型别名</button>
-                <button onclick="loadExt('feat_stats')">统计看板</button>
-                <button onclick="loadExt('console')">个人中心</button>
-                <button onclick="loadExt('feat_groups')">分组管理</button>
-                <button onclick="loadExt('feat_logs')">请求日志</button>
-                <button onclick="loadExt('feat_team')">团队管理</button>
-                <button onclick="loadExt('feat_testchat')">模型测试</button>
-                <button onclick="loadExt('feat_invoice')">发票管理</button>
-                <button onclick="loadExt('feat_cost')">费用明细</button>
-            </div>
-            <iframe id="extFrame" style="width:100%;height:680px;border:0;background:#fff;border-radius:0 8px 8px 8px"></iframe>
+            </header>
+            <main class="content">
+                <iframe id="frame" name="gwframe" style="height:600px"></iframe>
+            </main>
         </div>
     </div>
-</div>
+
 <script>
     const TOKEN_KEY = 'gw_token';
     function getToken(){ return localStorage.getItem(TOKEN_KEY) || ''; }
@@ -276,16 +135,27 @@
         const d = await r.json(); setToken(d.token); enterApp();
     }
     function logout(){ clearToken(); location.reload(); }
+
     async function enterApp(){
         const r = await api('/api/user/self');
         if(!r.ok){ clearToken(); location.reload(); return; }
         const d = await r.json();
         document.getElementById('auth').style.display='none';
-        document.getElementById('app').style.display='block';
-        document.getElementById('who').textContent = '当前用户：'+d.username + (d.role==='root'?'（管理员）':'');
-        if(d.role==='root'){ document.getElementById('tabSetting').style.display=''; document.getElementById('tabUsers').style.display=''; document.getElementById('tabRedemption').style.display=''; document.getElementById('tabLogs').style.display=''; document.getElementById('tabExt').style.display=''; }
-        document.getElementById('tabDashboard').style.display='';
-        loadRoutes();
+        document.getElementById('app').style.display='flex';
+        const isRoot = d.role === 'root';
+        document.getElementById('who').textContent = d.username;
+        document.getElementById('avatar').textContent = (d.username || '?').slice(0, 1).toUpperCase();
+        const tag = document.getElementById('roleTag');
+        tag.textContent = isRoot ? '管理员' : '用户';
+        tag.classList.toggle('role-tag-user', !isRoot);
+        if(!isRoot){
+            document.querySelectorAll('#menu .menu-item[data-root]').forEach(el=>el.style.display='none');
+        }
+        // 默认进入控制台
+        document.querySelectorAll('#menu .menu-item').forEach(a=>a.classList.remove('active'));
+        const first = document.querySelector('#menu .menu-item[data-page="feat_usage"]');
+        if(first) first.classList.add('active');
+        loadExt('feat_usage', '控制台');
     }
     if(getToken()) enterApp();
 
@@ -293,159 +163,62 @@
         const dark = document.documentElement.classList.toggle('dark');
         localStorage.setItem('gw_theme', dark ? 'dark' : 'light');
         document.getElementById('themeBtn').textContent = dark ? '☀' : '🌙';
+        applyThemeToFrame();
     }
     if(localStorage.getItem('gw_theme') === 'dark'){
         document.documentElement.classList.add('dark');
         document.getElementById('themeBtn').textContent = '☀';
     }
+    // 同步主题到 iframe（同源页面）
+    function applyThemeToFrame(){
+        const f = document.getElementById('frame');
+        try {
+            if(f && f.contentDocument && f.contentDocument.documentElement){
+                const dark = document.documentElement.classList.contains('dark');
+                f.contentDocument.documentElement.classList.toggle('dark', dark);
+            }
+        } catch(e){}
+    }
 
-    function showTab(id){
-        document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
-        document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-        event.target.classList.add('active');
-        document.getElementById(id).classList.add('active');
-        if(id==='routes') loadRoutes(); else if(id==='channels') loadChannels();
-        else if(id==='tokens') loadTokens(); else if(id==='settings') loadSetting();
-        else if(id==='dashboard') loadDashboard(); else if(id==='users') loadUsers();
-        else if(id==='redemption') loadRedemptions();         else if(id==='logs') loadLogs();
-        else if(id==='ext') loadExt('feat_usage');
+    // 导航：切换 iframe 页面并高亮菜单
+    function nav(page, title, el){
+        if(el){
+            document.querySelectorAll('#menu .menu-item').forEach(a=>a.classList.remove('active'));
+            el.classList.add('active');
+        }
+        document.getElementById('pageTitle').textContent = title;
+        loadExt(page);
+        return false;
     }
     function loadExt(name){
-        document.querySelectorAll('#extTabs button').forEach(b=>b.classList.remove('active'));
-        event.target.classList.add('active');
-        document.getElementById('extFrame').src='/' + name + '.html';
+        const f = document.getElementById('frame');
+        f.style.height = '600px';
+        f.src = '/' + name + '.html';
     }
 
-    async function loadRoutes(){ const res=await api('/admin/routes'); const rs=await res.json();
-        document.getElementById('routeTable').innerHTML = rs.map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td>${r.prefix}</td><td>${r.upstream_url}</td>
-            <td>${r.auth_type} ${r.auth_key?'('+r.auth_key+')':''}</td><td>${r.auth_values?'✔':'-'}</td><td>${r.rate_limit||'不限'}</td>
-            <td><span class="status ${r.enable?'status-on':'status-off'}">${r.enable?'启用':'禁用'}</span></td>
-            <td><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></td></tr>`).join(''); }
-    async function addRoute(){ const data={name:v('name'),prefix:v('prefix'),upstream_url:v('upstream'),
-        auth_type:v('authType'),auth_key:v('authKey'),auth_value:v('authValue'),auth_values:v('authValues'),
-        rate_limit:parseInt(v('rateLimit'))||0,need_api_key:document.getElementById('needApiKey').checked,enable:true};
-        await api('/admin/routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); loadRoutes();
-        ['name','prefix','upstream','authKey','authValue','authValues'].forEach(i=>document.getElementById(i).value=''); }
-    async function deleteRoute(id){ if(!confirm('确认删除？'))return; await api('/admin/routes/'+id,{method:'DELETE'}); loadRoutes(); }
-
-    async function loadChannels(){ const res=await api('/admin/channels'); const cs=await res.json();
-        document.getElementById('channelTable').innerHTML = cs.map(c=>`<tr><td>${c.id}</td><td>${c.name}</td><td>${c.type}</td><td>${c.base_url}</td>
-            <td>${c.models}</td><td>${c.group}</td><td>${c.priority}</td><td>${c.weight}</td>
-            <td><span class="status ${c.status?'status-on':'status-off'}">${c.status?'启用':'禁用'}</span></td>
-            <td><button class="btn btn-primary" onclick="testChannel(${c.id})">测试</button></td>
-            <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join('');
-        const groups={};
-        cs.forEach(c=>{ (groups[c.group]=groups[c.group]||[]).push(c); });
-        document.getElementById('groupOverview').innerHTML='分组概览：'+Object.keys(groups).map(g=>`<b>${g}</b> [`+groups[g].map(c=>`${c.name}(w${c.weight},p${c.priority})`).join('、')+`]`).join('　'); }
-    async function testChannel(id){ try{ const res=await api('/admin/channels/test/'+id,{method:'POST'}); const d=await res.json();
-        alert('状态码: '+d.status+'\n结果: '+(d.success?'成功 ✓':'失败 ✗')+'\n'+(d.message||'')); }
-        catch(e){ alert('测试请求出错: '+e); } }
-    async function addChannel(){ const data={name:v('cName'),type:v('cType'),base_url:v('cBaseURL'),keys:v('cKeys'),
-        auth_type:v('cAuthType'),auth_key:v('cAuthKey'),models:v('cModels'),model_mapping:v('cModelMap'),group:v('cGroup'),
-        priority:parseInt(v('cPriority'))||0,weight:parseInt(v('cWeight'))||1,rate_limit:parseInt(v('cRateLimit'))||0,
-        status:document.getElementById('cStatus').checked?1:0};
-        await api('/admin/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); loadChannels(); }
-    async function deleteChannel(id){ if(!confirm('确认删除？'))return; await api('/admin/channels/'+id,{method:'DELETE'}); loadChannels(); }
-
-    let tokenList=[];
-    async function loadTokens(){ const res=await api('/admin/tokens'); const ts=await res.json(); tokenList=ts;
-        document.getElementById('tokenTable').innerHTML = ts.map(t=>`<tr><td><code>${t.key}</code></td><td>${t.name||'-'}</td><td>${t.group||'default'}</td>
-            <td>${t.models||'全部'}</td>
-            <td>${t.used} / ${t.unlimited?'不限':(t.quota<0?'不限':t.quota)}</td>
-            <td>${t.expired_at?t.expired_at:'永久'}</td>
-            <td><span class="status ${t.status?'status-on':'status-off'}">${t.status?'启用':'禁用'}</span></td>
-            <td><button class="btn btn-primary" onclick="editToken('${t.key}')">编辑</button>
-            <button class="btn btn-danger" onclick="deleteToken('${t.key}')">删除</button></td></tr>`).join(''); }
-    let editingKey=null;
-    function isoToLocal(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; const p=n=>String(n).padStart(2,'0');
-        return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
-    function editToken(key){ const t=tokenList.find(x=>x.key===key); if(!t) return; editingKey=key;
-        document.getElementById('tName').value=t.name||''; document.getElementById('tGroup').value=t.group||'default';
-        document.getElementById('tQuota').value=t.unlimited?-1:(t.quota<0?-1:t.quota);
-        document.getElementById('tUnlimited').checked=t.unlimited===1; document.getElementById('tModels').value=t.models||'';
-        document.getElementById('tExpiredAt').value=isoToLocal(t.expired_at);
-        document.getElementById('tUpdateBtn').style.display=''; document.getElementById('editHint').textContent='编辑中：'+key.slice(0,8)+'…'; }
-    async function updateToken(){ if(!editingKey) return;
-        const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
-            quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
-            expired_at:exp?new Date(exp).toISOString():null, models:v('tModels'), status:1};
-        const res=await api('/admin/tokens/'+editingKey,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-        if(!res.ok){ alert('更新失败：'+(await res.text())); return; }
-        editingKey=null; document.getElementById('tUpdateBtn').style.display='none'; document.getElementById('editHint').textContent='';
-        ['tName','tGroup','tModels','tExpiredAt'].forEach(i=>document.getElementById(i).value=''); loadTokens(); }
-    async function exportTokens(){ const res=await api('/admin/tokens'); const ts=await res.json();
-        const blob=new Blob([JSON.stringify(ts,null,2)],{type:'application/json'});
-        const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='tokens.json'; a.click(); URL.revokeObjectURL(a.href); }
-    async function addToken(){ const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
-        quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
-        expired_at:exp?new Date(exp).toISOString():null, models:v('tModels')};
-        const res=await api('/admin/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-        const t=await res.json(); alert('已生成令牌：\n'+t.key); loadTokens(); document.getElementById('tName').value=''; document.getElementById('tModels').value=''; document.getElementById('tExpiredAt').value=''; }
-    async function deleteToken(key){ if(!confirm('确认删除该令牌？'))return; await api('/admin/tokens/'+key,{method:'DELETE'}); loadTokens(); }
-
-    async function loadSetting(){ const res=await api('/api/setting'); if(!res.ok)return; const s=await res.json();
-        document.getElementById('sMode').value=s.mode; document.getElementById('sOpenReg').checked=s.open_register;
-        document.getElementById('sRatio').value=JSON.stringify(s.model_ratio||{});
-        document.getElementById('sCompRatio').value=JSON.stringify(s.completion_ratio||{});
-        document.getElementById('sSmtpHost').value=s.smtp_host||''; document.getElementById('sSmtpPort').value=s.smtp_port||587;
-        document.getElementById('sSmtpUser').value=s.smtp_user||''; document.getElementById('sSmtpPass').value=s.smtp_pass||'';
-        document.getElementById('sSmtpFrom').value=s.smtp_from||''; document.getElementById('sNotifyEmail').value=s.notify_email||''; }
-    async function saveSetting(){ const data={mode:document.getElementById('sMode').value,
-        open_register:document.getElementById('sOpenReg').checked,
-        model_ratio:JSON.parse(document.getElementById('sRatio').value||'{}'),
-        completion_ratio:JSON.parse(document.getElementById('sCompRatio').value||'{}'),
-        smtp_host:document.getElementById('sSmtpHost').value, smtp_port:parseInt(document.getElementById('sSmtpPort').value)||587,
-        smtp_user:document.getElementById('sSmtpUser').value, smtp_pass:document.getElementById('sSmtpPass').value,
-        smtp_from:document.getElementById('sSmtpFrom').value, notify_email:document.getElementById('sNotifyEmail').value};
-        await api('/api/setting',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); alert('已保存'); }
-    async function testEmail(){ const to=document.getElementById('sNotifyEmail').value;
-        const res=await api('/api/setting/test_email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to})});
-        const d=await res.json().catch(()=>({})); alert(d.message||(res.ok?'已发送':'发送失败')); }
-
-    async function loadDashboard(){ const res=await api('/api/dashboard'); if(!res.ok)return; const d=await res.json();
-        const cards=[['今日请求',d.today_requests],['今日 Token',d.today_tokens],['渠道总数',d.channels_total],
-            ['启用渠道',d.channels_enabled],['自动禁用',d.channels_auto_disabled],['用户总数',d.users_total]];
-        document.getElementById('dashCards').innerHTML=canvas(cards);
-        document.getElementById('dashFoot').textContent='统计日期：'+(d.date||'-')+(d.is_root?'（管理员视图）':''); }
-    function canvas(cards){ return cards.map(c=>`<div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;min-width:120px"><div style="font-size:24px;font-weight:700;color:#2b6cb0">${c[1]}</div><div style="color:#718096;font-size:13px">${c[0]}</div></div>`).join(''); }
-
-    async function loadUsers(){ const res=await api('/admin/users'); if(!res.ok)return; const us=await res.json();
-        document.getElementById('userTable').innerHTML=us.map(u=>`<tr><td>${u.id}</td><td>${u.username}</td><td>${u.role}</td>
-            <td><span class="status ${u.status?'status-on':'status-off'}">${u.status?'启用':'禁用'}</span></td>
-            <td>${u.used} / ${u.quota<0?'不限':u.quota}</td>
-            <td><button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button>
-            <button class="btn btn-primary" onclick="toggleUser(${u.id},${u.status?0:1})">${u.status?'禁用':'启用'}</button></td></tr>`).join(''); }
-    async function addUser(){ const data={username:v('uName'),password:v('uPwd'),role:v('uRole'),quota:parseInt(v('uQuota'))||-1,rate_limit:parseInt(v('uRate'))||0};
-        const res=await api('/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-        if(!res.ok){ alert('创建失败：'+(await res.text())); return; } loadUsers(); ['uName','uPwd'].forEach(i=>document.getElementById(i).value=''); }
-    async function deleteUser(id){ if(!confirm('确认删除该用户？'))return; await api('/admin/users/'+id,{method:'DELETE'}); loadUsers(); }
-    async function toggleUser(id,status){ await api('/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}); loadUsers(); }
-
-    async function loadRedemptions(){ const res=await api('/admin/redemptions'); if(!res.ok)return; const rs=await res.json();
-        document.getElementById('redemptionTable').innerHTML=rs.map(r=>`<tr><td><code>${r.code}</code></td><td>${r.quota}</td>
-            <td><span class="status ${r.status?'status-on':'status-off'}">${r.status?'未使用':'已使用'}</span></td>
-            <td>${r.created_by||'-'}</td><td>${r.redeemed_by||'-'}</td></tr>`).join(''); }
-    async function createRedemptions(){ const data={quota:parseInt(v('rQuota'))||0,count:parseInt(v('rCount'))||1};
-        const res=await api('/admin/redemptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-        const d=await res.json(); if(d.codes){ document.getElementById('rCodes').textContent='已生成：\n'+d.codes.join('\n'); } loadRedemptions(); }
-    async function redeemCode(){ const code=v('redeemCode'); if(!code)return;
-        const res=await api('/api/redemption/redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
-        const d=await res.json(); alert(d.message||(res.ok?'兑换成功':'兑换失败')); document.getElementById('redeemCode').value=''; }
-
-    let logPage=1;
-    function maskTok(s){ if(!s) return ''; return s.length>8 ? s.slice(0,4)+'…'+s.slice(-4) : s; }
-    async function loadLogs(){ const m=document.getElementById('logModel').value, st=document.getElementById('logStatus').value, g=document.getElementById('logGroup').value;
-        const qs=new URLSearchParams({page:logPage,limit:50,model:m,status:st,group:g});
-        const res=await api('/api/logs?'+qs.toString()); if(!res.ok)return; const d=await res.json();
-        document.getElementById('logTable').innerHTML=d.logs.map(l=>`<tr><td>${l.time||''}</td><td>${l.method||''}</td><td>${l.path||''}</td><td>${l.model||''}</td><td>${l.group||''}</td><td>${maskTok(l.token)}</td><td>${l.status||''}</td><td>${l.cost||''}</td><td>${l.duration||''}</td></tr>`).join('');
-        const pages=Math.max(1,Math.ceil(d.total/d.limit||1));
-        document.getElementById('logPager').innerHTML=` 第${d.page}/${pages}页 共${d.total}条 `+
-            `<button class="btn btn-dark" onclick="logPage=Math.max(1,logPage-1);loadLogs()">上一页</button> `+
-            `<button class="btn btn-dark" onclick="logPage=Math.min(${pages},logPage+1);loadLogs()">下一页</button>`; }
-
-    async function loadPresets(){ const res=await api('/api/model_presets'); if(!res.ok)return; const d=await res.json();
-        document.getElementById('sRatio').value=JSON.stringify(d.model_ratio||{});
-        document.getElementById('sCompRatio').value=JSON.stringify(d.completion_ratio||{}); alert('已载入预设价格，记得点保存设置'); }
+    // iframe 高度自适应（同源直接测量；子页面也通过 postMessage 上报）
+    function fitFrame(){
+        const f = document.getElementById('frame');
+        if(!f || !f.contentDocument) return;
+        const doc = f.contentDocument;
+        let h = 0;
+        if(doc.body) h = Math.max(h, doc.body.scrollHeight);
+        if(doc.documentElement) h = Math.max(h, doc.documentElement.scrollHeight);
+        if(h > 0) f.style.height = (h + 4) + 'px';
+    }
+    function onFrameLoad(){
+        applyThemeToFrame();
+        fitFrame();
+    }
+    window.addEventListener('message', function(ev){
+        const d = ev.data || {};
+        if(d && d.type === 'gw_frame_height' && d.height){
+            const f = document.getElementById('frame');
+            if(f) f.style.height = (Number(d.height) + 4) + 'px';
+        }
+    });
+    window.addEventListener('resize', function(){ setTimeout(fitFrame, 60); });
+    document.getElementById('frame').addEventListener('load', onFrameLoad);
 </script>
 <script>
 (function loadAnnouncement() {
@@ -455,19 +228,22 @@
         .then(function (d) {
             if (!d || !d.announcement) return;
             var bar = document.createElement('div');
-            bar.style.cssText = 'position:relative;background:#ebf8ff;border:1px solid #bee3f8;color:#2c5282;border-radius:8px;padding:12px 40px 12px 16px;margin-bottom:16px;font-size:14px;line-height:1.6;';
+            bar.className = 'announce-bar';
             bar.textContent = String(d.announcement);
             var close = document.createElement('button');
+            close.className = 'announce-close';
             close.textContent = '×';
             close.title = '关闭';
-            close.style.cssText = 'position:absolute;top:50%;right:10px;transform:translateY(-50%);border:none;background:none;color:#2c5282;font-size:20px;cursor:pointer;line-height:1;padding:4px;';
             close.onclick = function () {
                 sessionStorage.setItem('announce_dismissed', '1');
                 bar.remove();
             };
             bar.appendChild(close);
-            var c = document.querySelector('.container');
-            if (c) c.insertBefore(bar, c.firstChild);
+            var app = document.getElementById('app');
+            if (app) {
+                var content = app.querySelector('.content');
+                if (content) content.insertBefore(bar, content.firstChild);
+            }
         })
         .catch(function () {});
 })();

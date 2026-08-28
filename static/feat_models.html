@@ -17,7 +17,6 @@
       <button class="btn btn-dark" id="btn-export">导出</button>
       <button class="btn btn-warning" id="btn-import">导入</button>
       <input type="file" id="file-import" accept="application/json,.json" style="display:none">
-      <a class="btn btn-dark" href="/index.html">返回</a>
     </div>
   </div>
   <div class="card">
@@ -42,7 +41,7 @@ let editing = {};
 function showMsg(t, ok) {
   const m = $('msg');
   m.textContent = t;
-  m.style.color = ok ? '#38a169' : '#e53e3e';
+  m.style.color = ok ? 'var(--success)' : 'var(--danger)';
 }
 
 async function load() {

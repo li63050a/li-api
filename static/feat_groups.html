@@ -6,11 +6,6 @@
   <title>分组管理</title>
   <link rel="stylesheet" href="/common.css">
   <script src="/common.js"></script>
-  <style>
-    .card { margin-bottom: 14px; }
-    .card h3 { margin-top: 0; }
-    .muted { color: #718096; }
-  </style>
 </head>
 <body>
 <div class="container">
@@ -40,7 +35,7 @@
 function showMsg(id, text, ok) {
   const el = $(id);
   el.textContent = text;
-  el.style.color = ok ? '#38a169' : '#e53e3e';
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
 }
 
 async function loadGroups() {
