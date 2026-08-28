@@ -47,6 +47,18 @@
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:14px">
+    <h3>每日签到设置</h3>
+    <div class="form-group">
+      <label style="flex:0 0 120px">签到额度</label>
+      <input id="checkinQuota" placeholder="如 1000">
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="saveCheckin()">保存</button>
+      <span id="ckMsg" class="msg"></span>
+    </div>
+  </div>
+
   <h3>当前配置预览</h3>
   <div id="preview" class="preview"><p class="muted">加载中…</p></div>
 </div>
@@ -97,6 +109,25 @@ async function saveSite() {
   }
 }
 
+async function loadCheckinCfg() {
+  try {
+    const r = await api('/api/setting/checkin');
+    if (r.ok) { const d = await r.json(); $('checkinQuota').value = d.quota || 1000; }
+  } catch (e) {}
+}
+
+async function saveCheckin() {
+  const q = parseInt(v('checkinQuota'), 10) || 0;
+  if (q <= 0) { $('ckMsg').textContent = '请输入正整数'; $('ckMsg').style.color = 'var(--danger)'; return; }
+  const r = await api('/api/setting/checkin', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quota: q })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok && d.success) { $('ckMsg').textContent = '已保存，签到额度 = ' + q; $('ckMsg').style.color = 'var(--success)'; }
+  else { $('ckMsg').textContent = '保存失败：' + r.status; $('ckMsg').style.color = 'var(--danger)'; }
+}
+
 (async () => {
   try {
     const me = await ensureAuth();
@@ -107,6 +138,7 @@ async function saveSite() {
       $('msg').textContent = '提示：当前账号无保存权限（需 root）';
     }
     await loadSite();
+    await loadCheckinCfg();
     renderPreview({
       name: v('name'), description: v('description'),
       logo: v('logo'), footer: v('footer'), about: v('about')
