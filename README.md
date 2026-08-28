@@ -258,19 +258,23 @@ curl https://你的网关/v1/chat/completions \
 
 ```json
 {
-  "listen": ":8090",
+  "listen_host": "0.0.0.0",
+  "listen_port": 8080,
   "data_dir": "data",
-  "tls_cert": "",
-  "tls_key": ""
+  "ssl_enabled": false,
+  "ssl_cert": "",
+  "ssl_key": ""
 }
 ```
 
 | 字段 | 含义 |
 | --- | --- |
-| `listen` | 监听地址，默认 `:8090` |
+| `listen_host` | 监听 IP，默认 `0.0.0.0`（全部网卡） |
+| `listen_port` | 监听端口，默认 `8080` |
 | `data_dir` | 数据目录（SQLite 存放处），默认 `data`；可通过环境变量 `DATA_DIR` 覆盖 |
-| `tls_cert` | 可选：TLS 证书路径（与 `tls_key` 同时设置则启用 HTTPS） |
-| `tls_key` | 可选：TLS 私钥路径 |
+| `ssl_enabled` | 是否开启 HTTPS（`true`/`false`，默认关闭） |
+| `ssl_cert` | TLS 证书路径（`ssl_enabled: true` 时必填） |
+| `ssl_key` | TLS 私钥路径（`ssl_enabled: true` 时必填） |
 
 数据均落在 `data_dir` 下的 `gateway.db`（SQLite 关系型存储，纯 Go 无 CGO；旧版 JSON 首次启动自动迁移为 `*.json.bak`）。
 
@@ -278,7 +282,6 @@ curl https://你的网关/v1/chat/completions \
 
 | 变量 | 说明 |
 | --- | --- |
-| `LISTEN` | 监听地址，覆盖 `config.json` 中的 `listen`（默认 `:8090`） |
 | `DATA_DIR` | 数据目录，覆盖 `config.json` 中的 `data_dir`（默认 `data`） |
 | `INIT_ROOT_USER` / `INIT_ROOT_PASSWORD` | 首次启动时按需引导初始 root（不预置默认账号） |
 | `REDIS_ADDR` | 可选：启用分布式会话（如 `127.0.0.1:6379`），多实例共享登录态 |

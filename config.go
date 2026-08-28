@@ -8,7 +8,8 @@ import (
 
 // Config 服务级配置（首次运行自动创建；仅网络层配置，业务设置在运行时管理）
 type Config struct {
-	Listen     string `json:"listen"`
+	ListenHost string `json:"listen_host"` // 监听 IP，默认 0.0.0.0
+	ListenPort int    `json:"listen_port"` // 监听端口，默认 8080
 	DataDir    string `json:"data_dir"`
 	SSLEnabled bool   `json:"ssl_enabled"` // 是否开启 HTTPS
 	SSLCert    string `json:"ssl_cert"`    // TLS 证书路径（ssl_enabled 时必填）
@@ -16,7 +17,8 @@ type Config struct {
 }
 
 const defaultConfig = `{
-  "listen": "0.0.0.0:8080",
+  "listen_host": "0.0.0.0",
+  "listen_port": 8080,
   "data_dir": "data",
   "ssl_enabled": false,
   "ssl_cert": "",
@@ -33,7 +35,8 @@ func loadConfig(path string) (Config, error) {
 			if werr := os.WriteFile(path, []byte(defaultConfig), 0o644); werr != nil {
 				return cfg, werr
 			}
-			cfg.Listen = "0.0.0.0:8080"
+			cfg.ListenHost = "0.0.0.0"
+			cfg.ListenPort = 8080
 			cfg.DataDir = "data"
 			return cfg, nil
 		}
@@ -41,20 +44,29 @@ func loadConfig(path string) (Config, error) {
 	}
 	if len(data) == 0 {
 		_ = os.WriteFile(path, []byte(defaultConfig), 0o644)
-		cfg.Listen = "0.0.0.0:8080"
+		cfg.ListenHost = "0.0.0.0"
+		cfg.ListenPort = 8080
 		cfg.DataDir = "data"
 		return cfg, nil
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return cfg, err
 	}
-	if cfg.Listen == "" {
-		cfg.Listen = "0.0.0.0:8080"
+	if cfg.ListenHost == "" {
+		cfg.ListenHost = "0.0.0.0"
+	}
+	if cfg.ListenPort == 0 {
+		cfg.ListenPort = 8080
 	}
 	if cfg.DataDir == "" {
 		cfg.DataDir = "data"
 	}
 	return cfg, nil
+}
+
+// Addr 返回合成后的监听地址 host:port
+func (c Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.ListenHost, c.ListenPort)
 }
 
 // genConfig 生成默认配置文件
@@ -74,7 +86,8 @@ func printHelp() {
   -gen-config        生成默认配置文件后退出
 
 配置 (config.json) — 仅网络层配置:
-  listen       监听地址，如 "0.0.0.0:8080"（默认）
+  listen_host  监听 IP，如 "0.0.0.0"（默认）
+  listen_port  监听端口，如 8080（默认）
   data_dir     数据存储目录，如 "data"
   ssl_enabled  是否开启 HTTPS（true/false）
   ssl_cert     TLS 证书路径（ssl_enabled 时必填）

@@ -19,7 +19,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（按 0.0.x 依次递增）
-const Version = "0.0.1.1"
+const Version = "0.0.1.2"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -118,10 +118,7 @@ func main() {
 	http.HandleFunc("/v1/", handler.SecurityHeaders(handler.CountMiddleware(handler.MaintenanceMiddleware(handler.SensitiveMiddleware(handler.GuardMiddleware(handler.RelayHandler))))))
 
 	// 启动服务（支持 HTTPS / 优雅停机 / SIGHUP 热重载缓存）
-	listen := os.Getenv("LISTEN")
-	if listen == "" {
-		listen = cfg.Listen
-	}
+	listen := cfg.Addr()
 	srv := &http.Server{Addr: listen, Handler: nil}
 	go func() {
 		if cfg.SSLEnabled {
