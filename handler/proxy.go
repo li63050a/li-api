@@ -79,6 +79,7 @@ func logAccess(entry map[string]interface{}) {
 	}
 	b, _ := json.Marshal(entry)
 	_, _ = logF.Write(append(b, '\n'))
+	NotifyRequestCompletion(entry)
 }
 
 // ProxyHandler 处理所有 /proxy/ 前缀的请求

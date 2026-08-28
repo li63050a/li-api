@@ -55,6 +55,14 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		t.Owner = s.Username
+		if t.Scope == "" {
+			t.Scope = "write"
+		}
+		if t.Group == "" {
+			if u, ok := model.GetUserByUsername(t.Owner); ok {
+				t.Group = u.Group
+			}
+		}
 		if _, err := model.InsertToken(&t); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

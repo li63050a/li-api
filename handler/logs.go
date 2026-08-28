@@ -60,6 +60,7 @@ func LogsHandler(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			continue
 		}
+		sanitizeLogEntry(entry)
 		if fModel != "" && fmtStr(entry["model"]) != fModel {
 			continue
 		}
@@ -95,6 +96,23 @@ func LogsHandler(w http.ResponseWriter, r *http.Request) {
 		"limit": limit,
 		"logs":  pageData,
 	})
+}
+
+// sanitizeLogEntry 掩码日志条目中的敏感字段，避免泄露完整令牌/密钥
+func sanitizeLogEntry(entry map[string]interface{}) {
+	if v, ok := entry["token"]; ok {
+		if s, ok := v.(string); ok {
+			entry["token"] = maskToken(s)
+		} else if v != nil {
+			entry["token"] = "****"
+		}
+	}
+	for k, v := range entry {
+		lk := strings.ToLower(k)
+		if (lk == "key" || lk == "authorization") && v != nil {
+			entry[k] = "***"
+		}
+	}
 }
 
 func fmtStr(v interface{}) string {

@@ -30,6 +30,10 @@ type User struct {
 	Email        string    `json:"email"`
 	TwoFASecret  string    `json:"twofa_secret,omitempty"`
 	TwoFAEnabled int       `json:"twofa_enabled"` // 1 启用 TOTP 双因素
+	Group        string    `json:"group"`
+	Avatar       string    `json:"avatar"`
+	InvitedBy    string    `json:"invited_by"`
+	Parent       string    `json:"parent"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -97,7 +101,7 @@ func InitUsers() error {
 }
 
 func loadUsersFromDB() ([]User, error) {
-	rows, err := db.DB.Query(`SELECT id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,created_at,updated_at FROM users ORDER BY id`)
+	rows, err := db.DB.Query(`SELECT id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,"group",avatar,invited_by,parent,created_at,updated_at FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +110,7 @@ func loadUsersFromDB() ([]User, error) {
 	for rows.Next() {
 		var u User
 		var created, updated sql.NullString
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.Quota, &u.Used, &u.RateLimit, &u.Email, &u.TwoFASecret, &u.TwoFAEnabled, &created, &updated); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.Quota, &u.Used, &u.RateLimit, &u.Email, &u.TwoFASecret, &u.TwoFAEnabled, &u.Group, &u.Avatar, &u.InvitedBy, &u.Parent, &created, &updated); err != nil {
 			return nil, err
 		}
 		u.CreatedAt = db.StrToTime(created.String)
@@ -126,9 +130,9 @@ func saveUsers() error {
 		return err
 	}
 	for _, u := range users {
-		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,"group",avatar,invited_by,parent,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, u.Group, u.Avatar, u.InvitedBy, u.Parent, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -166,9 +170,9 @@ func saveUsersToDB(us []User) error {
 		return err
 	}
 	for _, u := range us {
-		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO users(id,username,password_hash,role,status,quota,used,rate_limit,email,twofa_secret,twofa_enabled,"group",avatar,invited_by,parent,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			u.ID, u.Username, u.PasswordHash, u.Role, u.Status, u.Quota, u.Used, u.RateLimit, u.Email, u.TwoFASecret, u.TwoFAEnabled, u.Group, u.Avatar, u.InvitedBy, u.Parent, db.TimeToStr(u.CreatedAt), db.TimeToStr(u.UpdatedAt)); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -191,12 +195,12 @@ func checkPassword(hash, pw string) bool {
 	return hex.EncodeToString(sum[:]) == parts[0]
 }
 
-// VerifyUser 校验用户名密码
+// VerifyUser 校验用户名密码（支持用户名或邮箱登录，均忽略大小写）
 func VerifyUser(username, password string) (*User, bool) {
 	userMu.RLock()
 	defer userMu.RUnlock()
 	for i := range users {
-		if users[i].Username == username && users[i].Status == 1 {
+		if users[i].Status == 1 && (strings.EqualFold(users[i].Username, username) || strings.EqualFold(users[i].Email, username)) {
 			if checkPassword(users[i].PasswordHash, password) {
 				u := users[i]
 				return &u, true
@@ -392,6 +396,60 @@ func SetUserEmail(username, email string) error {
 		}
 	}
 	return errors.New("user not found")
+}
+
+// SetUserAvatar 更新用户头像
+func SetUserAvatar(username, avatar string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].Avatar = avatar
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// SetUserInvitedBy 记录用户是被谁邀请注册的
+func SetUserInvitedBy(username, invitedBy string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].InvitedBy = invitedBy
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// SetUserGroup 更新用户分组
+func SetUserGroup(username, group string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].Group = group
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
+// GetUserGroup 返回用户分组，未设置时返回 "default"
+func GetUserGroup(username string) string {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	for i := range users {
+		if users[i].Username == username {
+			if users[i].Group == "" {
+				return "default"
+			}
+			return users[i].Group
+		}
+	}
+	return "default"
 }
 
 // GetUser2FA 返回用户 TOTP 密钥与是否启用

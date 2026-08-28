@@ -55,7 +55,23 @@ type statsResult struct {
 	ByChannel     []statsChannel           `json:"by_channel"`
 	ByUser        []statsUser              `json:"by_user"`
 	StatusCodes   map[string]int64         `json:"status_codes"`
+	ByError       []statsError             `json:"by_error"`
+	ByDay         []statsDay               `json:"by_day"`
+	Trend         []statsDay               `json:"trend"`
 	Recent        []map[string]interface{} `json:"recent"`
+}
+
+// statsError 按 HTTP 状态码聚合的结果项
+type statsError struct {
+	Status int   `json:"status"`
+	Count  int64 `json:"count"`
+}
+
+// statsDay 按日期聚合的结果项
+type statsDay struct {
+	Day      string `json:"day"`
+	Requests int64  `json:"requests"`
+	Cost     int64  `json:"cost"`
 }
 
 func init() {
@@ -189,6 +205,19 @@ func statsTop10(costs []int64, names []string, counts []int64) ([]int64, []strin
 	return outCosts, outNames, outCounts
 }
 
+// statsDayOf 从日志 time 字段提取日期（YYYY-MM-DD），无法解析返回空串
+func statsDayOf(t string) string {
+	if d, err := time.Parse("2006-01-02", t); err == nil {
+		return d.Format("2006-01-02")
+	}
+	if len(t) >= 10 {
+		if d, err := time.Parse("2006-01-02", t[:10]); err == nil {
+			return d.Format("2006-01-02")
+		}
+	}
+	return ""
+}
+
 // computeStats 把解析出的日志行聚合成统计结果
 func computeStats(entries []map[string]interface{}) *statsResult {
 	res := &statsResult{
@@ -197,10 +226,15 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 		ByModel:     []statsModel{},
 		ByChannel:   []statsChannel{},
 		ByUser:      []statsUser{},
+		ByError:     []statsError{},
+		ByDay:       []statsDay{},
+		Trend:       []statsDay{},
 	}
 	modelIdx := map[string]int{}
 	channelIdx := map[string]int{}
 	userIdx := map[string]int{}
+	errIdx := map[int64]int64{}
+	dayIdx := map[string]*statsDay{}
 	var mNames []string
 	var mCosts []int64
 	var mCounts []int64
@@ -266,6 +300,17 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 
 		if st := statsToStr(e["status"]); st != "" {
 			res.StatusCodes[st]++
+			errIdx[statsToInt(e["status"])]++
+		}
+
+		if day := statsDayOf(t); day != "" {
+			d := dayIdx[day]
+			if d == nil {
+				d = &statsDay{Day: day}
+				dayIdx[day] = d
+			}
+			d.Requests++
+			d.Cost += cost
 		}
 	}
 
@@ -288,6 +333,28 @@ func computeStats(entries []map[string]interface{}) *statsResult {
 	for i := range uNames {
 		res.ByUser = append(res.ByUser, statsUser{Token: uNames[i], Requests: uCounts[i], Cost: uCosts[i]})
 	}
+
+	// 按状态码升序输出
+	var errCodes []int
+	for code := range errIdx {
+		errCodes = append(errCodes, int(code))
+	}
+	sort.Ints(errCodes)
+	for _, c := range errCodes {
+		res.ByError = append(res.ByError, statsError{Status: c, Count: errIdx[int64(c)]})
+	}
+
+	// 最近 14 天，不足的日期补零
+	now := time.Now()
+	for i := 13; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i).Format("2006-01-02")
+		if d, ok := dayIdx[day]; ok {
+			res.ByDay = append(res.ByDay, *d)
+		} else {
+			res.ByDay = append(res.ByDay, statsDay{Day: day})
+		}
+	}
+	res.Trend = res.ByDay
 
 	return res
 }

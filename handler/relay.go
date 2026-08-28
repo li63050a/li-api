@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -98,6 +99,50 @@ func isChannelError(status int) bool {
 	return status == 401 || status == 403 || status == 429 || status >= 500
 }
 
+// ResolveRedirect 解析全局模型重定向（KV redirect.<name>）；未配置则原样返回
+func ResolveRedirect(name string) string {
+	if resolved, ok := model.KVGet("redirect." + name); ok && resolved != "" {
+		return resolved
+	}
+	return name
+}
+
+// ipAllowed 判断 IP 是否在允许列表内（支持单 IP 与 CIDR）
+func ipAllowed(ip, allowed string) bool {
+	addr := net.ParseIP(strings.TrimSpace(ip))
+	if addr == nil {
+		return false
+	}
+	for _, part := range strings.Split(allowed, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "/") {
+			if _, ipnet, err := net.ParseCIDR(part); err == nil && ipnet.Contains(addr) {
+				return true
+			}
+		} else if a := net.ParseIP(part); a != nil && a.Equal(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// injectAzureAPIVersion 为 Azure 渠道在转发前注入 api-version 查询参数（返回原请求或带参副本）
+func injectAzureAPIVersion(orig *http.Request, ch model.Channel) *http.Request {
+	if ch.Type != "azure" || ch.AzureAPIVersion == "" {
+		return orig
+	}
+	cp := *orig
+	u := *orig.URL
+	q := u.Query()
+	q.Set("api-version", ch.AzureAPIVersion)
+	u.RawQuery = q.Encode()
+	cp.URL = &u
+	return &cp
+}
+
 // RelayHandler 仿 new-api 的模型路由转发：按 令牌分组 + 模型名 选择渠道
 func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	key := extractToken(r)
@@ -119,6 +164,20 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User Quota Exceeded", http.StatusForbidden)
 		return
 	}
+	// 令牌作用域：read 令牌仅允许 GET
+	if tok.Scope == "read" && r.Method != "GET" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "read-only token"})
+		return
+	}
+	// 来源 IP 绑定校验
+	if tok.AllowedIPs != "" && !ipAllowed(clientIP(r), tok.AllowedIPs) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "ip not allowed"})
+		return
+	}
 	group := tok.Group
 	if group == "" {
 		group = "default"
@@ -135,7 +194,9 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	// WebSocket 透传（如 /v1/realtime）：跳过 body 解析，直接转发首个渠道
 	if strings.EqualFold(r.Header.Get("Connection"), "upgrade") &&
 		strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		wsModel := ResolveModel(r.URL.Query().Get("model"))
+		wsModel := r.URL.Query().Get("model")
+		wsModel = ResolveRedirect(wsModel)
+		wsModel = ResolveModel(wsModel)
 		wsTargets := buildTargets(group, wsModel)
 		if len(wsTargets) == 0 {
 			http.Error(w, "No available channel for model: "+wsModel, http.StatusBadGateway)
@@ -145,7 +206,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		var wsErr error
 		cw := newCountWriter(w)
 		t := wsTargets[0]
-		proxy := buildForwardProxy(r, t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
+		proxy := buildForwardProxy(injectAzureAPIVersion(r, t.channel), t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			wsErr = err
 			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
@@ -196,7 +257,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 令牌级模型白名单校验（别名先解析为真实模型）
+	// 令牌级模型白名单校验（全局重定向与别名先解析为真实模型）
+	modelName = ResolveRedirect(modelName)
 	modelName = ResolveModel(modelName)
 	if !model.TokenModelAllowed(tok.Models, modelName) {
 		http.Error(w, "Model not allowed for this token", http.StatusForbidden)
@@ -220,7 +282,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		nb := rewriteModel(bodyBuf, upstream)
 		r.Body = io.NopCloser(bytes.NewReader(nb))
 		r.ContentLength = int64(len(nb))
-		proxy := buildForwardProxy(r, t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
+		proxy := buildForwardProxy(injectAzureAPIVersion(r, t.channel), t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			lastErr = err
 			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
@@ -256,7 +318,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(bytes.NewReader(nb))
 		r.ContentLength = int64(len(nb))
 		bw := &bufferWriter{buf: &bytes.Buffer{}}
-		proxy := buildForwardProxy(r, t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
+		proxy := buildForwardProxy(injectAzureAPIVersion(r, t.channel), t.channel.BaseURL, r.URL.Path, t.channel.AuthType, t.channel.AuthKey, t.key)
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			lastErr = err
 		}

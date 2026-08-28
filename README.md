@@ -58,6 +58,17 @@
 | 企业账单 | `/api/billing/summary` 月度汇总（请求数/消耗/TOP 模型）+ CSV |
 | OAuth 扩展 | 新增 **LinuxDO / Discord** 一键登录 |
 | 前端页面 | 安全设置（2FA/OAuth/守卫）、通知设置、模型别名、统计看板 可视化页面 |
+| 协议适配 | **Anthropic `/v1/messages`** 与 **Gemini `/v1beta`** 原生协议 ↔ OpenAI 自动转换；Azure 渠道自动注入 `api-version` |
+| 全局模型重定向 | `/admin/model_redirects` 配置 `redirect.<name>`，转发前自动解析 |
+| 令牌安全 | 令牌 `scope`（只读/读写）与 `allowed_ips`（IP 绑定） |
+| 套餐订阅 | 管理员定义套餐（额度+时长），用户自助订阅，每日自动赠送额度 |
+| 邀请注册 | 邀请码注册 + 双向返利额度（被邀人得全量、邀请人得 10%） |
+| 账号体系 | 邮箱/用户名双登录、个人资料（头像）、用户分组、额度转账、管理员退款 |
+| 安全加固 | 登录失败锁定（5 次封 15 分钟）、Cloudflare Turnstile 人机验证（可选） |
+| 运维 | 维护模式（503）、站内公告、优雅停机、请求完成 Webhook 回调 |
+| 定时任务 | 套餐每日赠送 / 渠道健康巡检 / 日统计快照 |
+| 统计增强 | 14 天趋势 + 模型占比 + 状态码分布（`by_day`/`by_error`），费用明细页 |
+| 编排部署 | k8s.yaml（Deployment/Service/PVC/Ingress） |
 
 ---
 

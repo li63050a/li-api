@@ -27,6 +27,7 @@ type Channel struct {
 	AuthKey   string `json:"auth_key"`   // header / query 的键名
 	Models    string `json:"models"`     // 支持的模型，逗号分隔，"*" 表示全部
 	ModelMapping string `json:"model_mapping"` // 模型名映射 JSON：{"公开名":"上游名"}
+	AzureAPIVersion string `json:"azure_api_version"` // Azure 渠道的 API 版本（如 2024-02-15-preview）
 	Group     string `json:"group"`      // 分组（令牌与渠道通过分组关联）
 	Priority  int    `json:"priority"`   // 优先级，越大越优先
 	Weight    int    `json:"weight"`     // 同优先级内的权重（负载比例）
@@ -64,7 +65,7 @@ func InitChannels() error {
 }
 
 func loadChannelsFromDB() ([]Channel, error) {
-	rows, err := db.DB.Query(`SELECT id,name,type,base_url,keys,auth_type,auth_key,models,model_mapping,grp,priority,weight,rate_limit,status,created_at,updated_at FROM channels ORDER BY id`)
+	rows, err := db.DB.Query(`SELECT id,name,type,base_url,keys,auth_type,auth_key,models,model_mapping,azure_api_version,grp,priority,weight,rate_limit,status,created_at,updated_at FROM channels ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +74,7 @@ func loadChannelsFromDB() ([]Channel, error) {
 	for rows.Next() {
 		var c Channel
 		var created, updated sql.NullString
-		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.BaseURL, &c.Keys, &c.AuthType, &c.AuthKey, &c.Models, &c.ModelMapping, &c.Group, &c.Priority, &c.Weight, &c.RateLimit, &c.Status, &created, &updated); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.BaseURL, &c.Keys, &c.AuthType, &c.AuthKey, &c.Models, &c.ModelMapping, &c.AzureAPIVersion, &c.Group, &c.Priority, &c.Weight, &c.RateLimit, &c.Status, &created, &updated); err != nil {
 			return nil, err
 		}
 		c.CreatedAt = db.StrToTime(created.String)
@@ -97,9 +98,9 @@ func saveChannelsToDB(cs []Channel) error {
 		return err
 	}
 	for _, c := range cs {
-		if _, err := tx.Exec(`INSERT INTO channels(id,name,type,base_url,keys,auth_type,auth_key,models,model_mapping,grp,priority,weight,rate_limit,status,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			c.ID, c.Name, c.Type, c.BaseURL, c.Keys, c.AuthType, c.AuthKey, c.Models, c.ModelMapping, c.Group, c.Priority, c.Weight, c.RateLimit, c.Status, db.TimeToStr(c.CreatedAt), db.TimeToStr(c.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO channels(id,name,type,base_url,keys,auth_type,auth_key,models,model_mapping,azure_api_version,grp,priority,weight,rate_limit,status,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			c.ID, c.Name, c.Type, c.BaseURL, c.Keys, c.AuthType, c.AuthKey, c.Models, c.ModelMapping, c.AzureAPIVersion, c.Group, c.Priority, c.Weight, c.RateLimit, c.Status, db.TimeToStr(c.CreatedAt), db.TimeToStr(c.UpdatedAt)); err != nil {
 			tx.Rollback()
 			return err
 		}

@@ -5,7 +5,59 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
+
+// 登录失败锁定：同一用户名 5 次失败后锁定 15 分钟
+const (
+	authFailThreshold = 5
+	authLockoutDur    = 15 * time.Minute
+)
+
+type authFailState struct {
+	count       int
+	lockedUntil time.Time
+}
+
+var (
+	authFailMu sync.Mutex
+	authFails  = map[string]authFailState{}
+)
+
+// authLoginLocked 返回该用户名当前是否处于锁定期
+func authLoginLocked(username string) bool {
+	authFailMu.Lock()
+	defer authFailMu.Unlock()
+	st, ok := authFails[username]
+	return ok && time.Now().Before(st.lockedUntil)
+}
+
+// authLoginFail 记录一次登录失败；达到阈值则锁定 15 分钟
+func authLoginFail(username string) {
+	authFailMu.Lock()
+	defer authFailMu.Unlock()
+	st := authFails[username]
+	st.count++
+	if st.count >= authFailThreshold {
+		st.lockedUntil = time.Now().Add(authLockoutDur)
+	}
+	authFails[username] = st
+}
+
+// authLoginReset 登录成功后清空失败记录
+func authLoginReset(username string) {
+	authFailMu.Lock()
+	defer authFailMu.Unlock()
+	delete(authFails, username)
+}
+
+// authJSONError 写 JSON 错误响应
+func authJSONError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
 
 // LoginHandler POST /api/user/login {username,password} -> {token}
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +73,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+	if !VerifyTurnstile(r) {
+		authJSONError(w, http.StatusBadRequest, "captcha required")
+		return
+	}
+	if authLoginLocked(cred.Username) {
+		authJSONError(w, http.StatusTooManyRequests, "too many failed attempts, try later")
+		return
+	}
 	if u, ok := model.VerifyUser(cred.Username, cred.Password); ok {
+		authLoginReset(cred.Username)
 		// 已启用 2FA 的用户：先不签发会话，返回 need_2fa，待 TOTP 校验后发会话
 		if u.TwoFAEnabled == 1 {
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -38,6 +99,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	authLoginFail(cred.Username)
 	http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 }
 
@@ -47,7 +109,7 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// RegisterHandler POST /api/user/register {username,password} -> {token}
+// RegisterHandler POST /api/user/register {username,password,invite?} -> {token}
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -60,9 +122,14 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	var cred struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Invite   string `json:"invite"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&cred); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !VerifyTurnstile(r) {
+		authJSONError(w, http.StatusBadRequest, "captcha required")
 		return
 	}
 	if len(cred.Username) < 3 || len(cred.Password) < 6 {
@@ -80,8 +147,89 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// 邀请码：兑换成功则给新用户发放额度，并给邀请人 10% 奖励
+	if cred.Invite != "" {
+		inv, err := model.RedeemInvite(cred.Invite, cred.Username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		model.AddUserQuota(cred.Username, inv.Quota)
+		_ = model.SetUserInvitedBy(cred.Username, inv.Inviter)
+		model.AppendBilling(model.BillingEntry{
+			User:    cred.Username,
+			Type:    "invite",
+			Amount:  inv.Quota,
+			Balance: authUserQuota(cred.Username),
+			Remark:  "invite:" + cred.Invite,
+		})
+		bonus := inv.Quota / 10
+		if bonus > 0 {
+			model.AddUserQuota(inv.Inviter, bonus)
+			model.AppendBilling(model.BillingEntry{
+				User:    inv.Inviter,
+				Type:    "invite_bonus",
+				Amount:  bonus,
+				Balance: authUserQuota(inv.Inviter),
+				Remark:  "invite bonus:" + cred.Invite,
+			})
+		}
+	}
 	tok := model.CreateSession(cred.Username)
 	json.NewEncoder(w).Encode(map[string]interface{}{"token": tok, "username": cred.Username, "role": role})
+}
+
+// authUserQuota 返回用户当前额度
+func authUserQuota(name string) int64 {
+	if u, ok := model.GetUserByUsername(name); ok {
+		return u.Quota
+	}
+	return 0
+}
+
+// ProfileHandler GET/PUT /api/user/profile
+func ProfileHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	s, ok := requireSession(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	switch r.Method {
+	case "GET":
+		u, ok := model.GetUserByUsername(s.Username)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"username": u.Username,
+			"email":    u.Email,
+			"avatar":   u.Avatar,
+			"group":    model.GetUserGroup(s.Username),
+		})
+	case "PUT":
+		var body struct {
+			Avatar string `json:"avatar"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if err := model.SetUserAvatar(s.Username, body.Avatar); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"success": "true"})
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // SelfHandler GET /api/user/self

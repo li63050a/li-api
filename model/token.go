@@ -39,6 +39,8 @@ type Token struct {
 	Status     int       `json:"status"`      // 1 启用，0 禁用
 	ExpiredAt  time.Time `json:"expired_at"`  // 过期时间，零值表示永不过期
 	Models     string    `json:"models"`      // 允许使用的模型（逗号分隔），空表示全部
+	Scope      string    `json:"scope"`       // 令牌作用域：read（只读）/ write / 空（不限制）
+	AllowedIPs string    `json:"allowed_ips"` // 允许来源 IP（逗号分隔，支持 CIDR），空表示不限制
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -71,7 +73,7 @@ func InitTokens() error {
 }
 
 func loadTokensFromDB() ([]Token, error) {
-	rows, err := db.DB.Query(`SELECT key,name,owner,grp,quota,used,unlimited,status,expired_at,models,created_at,updated_at FROM tokens ORDER BY created_at`)
+	rows, err := db.DB.Query(`SELECT key,name,owner,grp,quota,used,unlimited,status,expired_at,models,scope,allowed_ips,created_at,updated_at FROM tokens ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +82,7 @@ func loadTokensFromDB() ([]Token, error) {
 	for rows.Next() {
 		var t Token
 		var expired, created, updated sql.NullString
-		if err := rows.Scan(&t.Key, &t.Name, &t.Owner, &t.Group, &t.Quota, &t.Used, &t.Unlimited, &t.Status, &expired, &t.Models, &created, &updated); err != nil {
+		if err := rows.Scan(&t.Key, &t.Name, &t.Owner, &t.Group, &t.Quota, &t.Used, &t.Unlimited, &t.Status, &expired, &t.Models, &t.Scope, &t.AllowedIPs, &created, &updated); err != nil {
 			return nil, err
 		}
 		t.ExpiredAt = db.StrToTime(expired.String)
@@ -105,9 +107,9 @@ func saveTokensToDB(ts []Token) error {
 		return err
 	}
 	for _, t := range ts {
-		if _, err := tx.Exec(`INSERT INTO tokens(key,name,owner,grp,quota,used,unlimited,status,expired_at,models,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-			t.Key, t.Name, t.Owner, t.Group, t.Quota, t.Used, t.Unlimited, t.Status, db.TimeToStr(t.ExpiredAt), t.Models, db.TimeToStr(t.CreatedAt), db.TimeToStr(t.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO tokens(key,name,owner,grp,quota,used,unlimited,status,expired_at,models,scope,allowed_ips,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			t.Key, t.Name, t.Owner, t.Group, t.Quota, t.Used, t.Unlimited, t.Status, db.TimeToStr(t.ExpiredAt), t.Models, t.Scope, t.AllowedIPs, db.TimeToStr(t.CreatedAt), db.TimeToStr(t.UpdatedAt)); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -184,6 +186,8 @@ func UpdateToken(key string, t *Token) error {
 			tokens[i].Status = t.Status
 			tokens[i].ExpiredAt = t.ExpiredAt
 			tokens[i].Models = t.Models
+			tokens[i].Scope = t.Scope
+			tokens[i].AllowedIPs = t.AllowedIPs
 			return saveTokens()
 		}
 	}

@@ -15,7 +15,17 @@
     .card h3 { margin-top: 0; }
     .ubar { height: 14px; background: #edf2f7; border-radius: 3px; overflow: hidden; min-width: 140px; }
     .ubar-fill { height: 100%; background: #2b6cb0; border-radius: 3px; }
+    .ubar-fill-cost { background: #dd6b20; }
     .muted { color: #718096; }
+    .badge { font-size: 12px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
+    .badge-2xx { background: #c6f6d5; color: #22543d; }
+    .badge-3xx { background: #bee3f8; color: #2c5282; }
+    .badge-4xx { background: #feebc8; color: #7b341e; }
+    .badge-5xx { background: #fed7d7; color: #9b2c2c; }
+    .badge-other { background: #e2e8f0; color: #4a5568; }
+    .legend { display: flex; gap: 16px; color: #718096; font-size: 13px; margin: 6px 0 10px; }
+    .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+    #trendCanvas { display: block; }
   </style>
 </head>
 <body>
@@ -37,8 +47,30 @@
   </div>
 
   <div class="card">
+    <h3>近 14 天请求 / 成本趋势</h3>
+    <div class="legend">
+      <span><i style="background:#2b6cb0"></i>请求数</span>
+      <span><i style="background:#dd6b20"></i>成本</span>
+    </div>
+    <div id="trendWrap" style="display:none"><canvas id="trendCanvas"></canvas></div>
+    <div id="trendChart" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
     <h3>模型消耗 Top10</h3>
     <div id="modelChart" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h3>错误 / 状态码分布</h3>
+    <table>
+      <thead>
+        <tr><th>状态码</th><th>次数</th><th>占比</th><th></th></tr>
+      </thead>
+      <tbody id="statusBody">
+        <tr><td colspan="4" class="muted">加载中…</td></tr>
+      </tbody>
+    </table>
   </div>
 
   <div class="card">
@@ -57,6 +89,16 @@
 <script>
 function fmt(v) { return Number(v || 0).toLocaleString(); }
 
+function statusBadge(s) {
+  const n = parseInt(s, 10);
+  let cls = 'badge-other';
+  if (n >= 200 && n < 300) cls = 'badge-2xx';
+  else if (n >= 300 && n < 400) cls = 'badge-3xx';
+  else if (n >= 400 && n < 500) cls = 'badge-4xx';
+  else if (n >= 500) cls = 'badge-5xx';
+  return '<span class="badge ' + cls + '">' + escapeHtml(s) + '</span>';
+}
+
 async function loadStats() {
   try { await ensureAuth(); } catch (e) { return; }
   $('stTotalReq').textContent = '加载中…';
@@ -65,6 +107,9 @@ async function loadStats() {
     $('stTotalReq').textContent = '加载失败';
     $('modelChart').textContent = '加载失败';
     $('recentBody').innerHTML = '<tr><td colspan="6" class="muted">加载失败</td></tr>';
+    $('trendWrap').style.display = 'none';
+    $('trendChart').innerHTML = '<span class="muted">加载失败</span>';
+    $('statusBody').innerHTML = '<tr><td colspan="4" class="muted">加载失败</td></tr>';
     return;
   }
   const d = await r.json();
@@ -73,36 +118,156 @@ async function loadStats() {
   $('stTotalCost').textContent = fmt(d.total_cost);
   $('stTodayCost').textContent = fmt(d.today_cost);
   $('stTotalTok').textContent = fmt(d.total_tokens);
+  drawTrend(d.by_day || []);
   renderChart(d.by_model || []);
+  renderStatus(d.status_codes || d.by_error || {});
   renderRecent(d.recent || []);
+}
+
+function drawTrend(list) {
+  const wrap = $('trendWrap');
+  const box = $('trendChart');
+  if (!Array.isArray(list) || list.length === 0) {
+    wrap.style.display = 'none';
+    box.innerHTML = '<span class="muted">暂无按日趋势数据（当前版本未提供 by_day）</span>';
+    return;
+  }
+  const items = list.slice(-14).map(x => ({
+    label: String(x.date || x.day || ''),
+    req: Number(x.requests || x.count || 0),
+    cost: Number(x.cost || 0)
+  }));
+  if (items.length === 0) {
+    wrap.style.display = 'none';
+    box.innerHTML = '<span class="muted">暂无按日趋势数据（当前版本未提供 by_day）</span>';
+    return;
+  }
+  wrap.style.display = '';
+  box.innerHTML = '';
+  const cv = $('trendCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.parentNode.clientWidth || 800;
+  const h = 240;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const padL = 48, padR = 52, padT = 16, padB = 32;
+  const pw = w - padL - padR, ph = h - padT - padB;
+  const maxReq = Math.max.apply(null, items.map(i => i.req)) || 1;
+  const maxCost = Math.max.apply(null, items.map(i => i.cost)) || 1;
+  const n = items.length;
+
+  ctx.font = '11px sans-serif';
+  ctx.lineWidth = 1;
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const y = padT + ph - (i / steps) * ph;
+    ctx.strokeStyle = '#edf2f7';
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = '#718096';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fmt(Math.round(maxReq * i / steps)), padL - 6, y);
+    ctx.textAlign = 'left';
+    ctx.fillText(fmt(Math.round(maxCost * i / steps)), w - padR + 6, y);
+  }
+
+  const step = Math.ceil(n / 8);
+  ctx.fillStyle = '#718096';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  items.forEach((it, i) => {
+    const x = n === 1 ? padL + pw / 2 : padL + (i / (n - 1)) * pw;
+    if (i % step === 0 || i === n - 1) ctx.fillText(it.label.slice(0, 10), x, padT + ph + 6);
+  });
+
+  const px = i => n === 1 ? padL + pw / 2 : padL + (i / (n - 1)) * pw;
+  const pyReq = v => padT + ph - (v / maxReq) * ph;
+  const pyCost = v => padT + ph - (v / maxCost) * ph;
+
+  function drawLine(getV, yFn, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    items.forEach((it, i) => {
+      const x = px(i), y = yFn(getV(it));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    items.forEach((it, i) => {
+      const x = px(i), y = yFn(getV(it));
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    });
+  }
+  drawLine(it => it.req, pyReq, '#2b6cb0');
+  drawLine(it => it.cost, pyCost, '#dd6b20');
+
+  ctx.fillStyle = '#718096';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('请求数(左轴) / 成本(右轴)', padL + pw / 2, padT + ph + 18);
 }
 
 function renderChart(list) {
   const el = $('modelChart');
   if (list.length === 0) { el.innerHTML = '<span class="muted">暂无数据</span>'; return; }
-  const max = Math.max.apply(null, list.map(m => m.requests || 0)) || 1;
+  const maxReq = Math.max.apply(null, list.map(m => m.requests || 0)) || 1;
+  const maxCost = Math.max.apply(null, list.map(m => m.cost || 0)) || 1;
   el.innerHTML = '<table style="box-shadow:none"><tbody>' + list.map(m => {
     const req = Number(m.requests || 0);
-    const pct = Math.round(req / max * 100);
+    const cost = Number(m.cost || 0);
+    const pctReq = Math.round(req / maxReq * 100);
+    const pctCost = Math.round(cost / maxCost * 100);
     return `<tr>
       <td style="white-space:nowrap;font-weight:600">${escapeHtml(m.model)}</td>
       <td style="white-space:nowrap">${fmt(req)} 次</td>
-      <td><div class="ubar"><div class="ubar-fill" style="width:${pct}%"></div></div></td>
-      <td style="white-space:nowrap">成本 ${fmt(m.cost)}</td>
+      <td><div class="ubar"><div class="ubar-fill" style="width:${pctReq}%"></div></div></td>
+      <td style="white-space:nowrap">成本 ${fmt(cost)}</td>
+      <td><div class="ubar"><div class="ubar-fill ubar-fill-cost" style="width:${pctCost}%"></div></div></td>
     </tr>`;
   }).join('') + '</tbody></table>';
+}
+
+function renderStatus(map) {
+  const body = $('statusBody');
+  const entries = Object.keys(map || {}).map(k => [String(k), Number(map[k] || 0)]);
+  if (entries.length === 0) { body.innerHTML = '<tr><td colspan="4" class="muted">暂无数据</td></tr>'; return; }
+  entries.sort((a, b) => (Number(a[0]) - Number(b[0])) || (b[1] - a[1]));
+  const total = entries.reduce((s, e) => s + e[1], 0) || 1;
+  const max = Math.max.apply(null, entries.map(e => e[1])) || 1;
+  body.innerHTML = entries.map(([code, count]) => {
+    const pct = count / total * 100;
+    return `<tr>
+      <td>${statusBadge(code)}</td>
+      <td style="white-space:nowrap">${fmt(count)}</td>
+      <td style="white-space:nowrap">${pct.toFixed(1)}%</td>
+      <td><div class="ubar"><div class="ubar-fill" style="width:${Math.round(count / max * 100)}%"></div></div></td>
+    </tr>`;
+  }).join('');
 }
 
 function renderRecent(list) {
   const body = $('recentBody');
   if (list.length === 0) { body.innerHTML = '<tr><td colspan="6" class="muted">暂无记录</td></tr>'; return; }
   body.innerHTML = list.map(e => `<tr>
-    <td>${escapeHtml(fmtTime(e.time))}</td>
-    <td>${escapeHtml(e.model || '-')}</td>
-    <td>${escapeHtml(maskTok(e.token))}</td>
-    <td>${escapeHtml(e.status || '-')}</td>
-    <td>${escapeHtml(e.cost || 0)}</td>
-    <td>${escapeHtml(e.duration || 0)}</td>
+    <td style="white-space:nowrap">${escapeHtml(fmtTime(e.time))}</td>
+    <td style="white-space:nowrap">${escapeHtml(e.model || '-')}</td>
+    <td style="white-space:nowrap">${escapeHtml(maskTok(e.token))}</td>
+    <td>${statusBadge(e.status)}</td>
+    <td style="white-space:nowrap">${escapeHtml(e.cost || 0)}</td>
+    <td style="white-space:nowrap">${escapeHtml(e.duration || 0)}</td>
   </tr>`).join('');
 }
 

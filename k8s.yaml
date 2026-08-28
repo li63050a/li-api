@@ -1,0 +1,126 @@
+# =====================================================================
+# API 网关 Kubernetes 清单
+# 使用方法：kubectl apply -f k8s.yaml
+# 说明：部署一个无状态的 HTTP 网关（单静态二进制），SQLite 数据放在
+#      共享卷中（见下方 DATA_DIR 注释），通过 Ingress 对外提供服务。
+# =====================================================================
+
+# ---------- 命名空间 ----------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: api-gateway
+  labels:
+    app.kubernetes.io/part-of: api-gateway
+
+---
+# ---------- 部署 ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          # 镜像占位符：发布时替换为实际镜像地址和版本
+          image: your-registry/api-gateway:v0.0.0.9
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: LISTEN
+              value: ":8080"
+            # DATA_DIR 是共享目录：SQLite 属于有状态数据，多副本写入会冲突。
+            # 预期方案二选一：
+            #   a) 单副本 + PVC（或 StatefulSet）独占数据；
+            #   b) 保留多副本，但仅主副本写、其余副本只读（read-only-first）。
+            # 此处按需求保持 env 原样，共享同一个 PVC。
+            - name: DATA_DIR
+              value: "/app/data"
+            # 可选：启用 Redis 时取消下面一行的注释并填入地址
+            # - name: REDIS_ADDR
+            #   value: "redis://redis:6379"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 10
+
+---
+# ---------- 服务 ----------
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+---
+# ---------- 持久化卷声明 ----------
+# 供 SQLite 数据文件使用（挂载到容器的 /app/data）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gateway-data
+  namespace: api-gateway
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# ---------- 入口（Ingress）----------
+# 使用前提：集群中已安装 Ingress Controller（如 nginx-ingress / ingress-nginx）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-gateway
+  namespace: api-gateway
+spec:
+  rules:
+    - host: gateway.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080

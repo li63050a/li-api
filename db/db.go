@@ -79,6 +79,10 @@ func Migrate() error {
 			quota BIGINT NOT NULL DEFAULT 0,
 			used BIGINT NOT NULL DEFAULT 0,
 			rate_limit INTEGER NOT NULL DEFAULT 0,
+			"group" TEXT,
+			avatar TEXT,
+			invited_by TEXT,
+			parent TEXT,
 			created_at TEXT,
 			updated_at TEXT
 		)`,
@@ -93,13 +97,15 @@ func Migrate() error {
 			status INTEGER,
 			expired_at TEXT,
 			models TEXT,
+			scope TEXT,
+			allowed_ips TEXT,
 			created_at TEXT,
 			updated_at TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS channels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT, type TEXT, base_url TEXT, keys TEXT, auth_type TEXT, auth_key TEXT,
-			models TEXT, model_mapping TEXT, grp TEXT, priority INTEGER, weight INTEGER,
+			models TEXT, model_mapping TEXT, azure_api_version TEXT, grp TEXT, priority INTEGER, weight INTEGER,
 			rate_limit INTEGER, status INTEGER, created_at TEXT, updated_at TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
@@ -149,37 +155,54 @@ func Migrate() error {
 			return err
 		}
 	}
-	// 为 users 表补充新增列（幂等迁移）
-	existing := map[string]bool{}
-	cols, err := DB.Query("PRAGMA table_info(users)")
-	if err != nil {
-		return err
-	}
-	for cols.Next() {
-		var cid, notnull, pk int
-		var name, typ string
-		var dflt interface{}
-		if err := cols.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			cols.Close()
+	// 为各表补充新增列（幂等迁移）
+	ensureCols := func(table string, cols map[string]string) error {
+		existing := map[string]bool{}
+		r, err := DB.Query("PRAGMA table_info(" + table + ")")
+		if err != nil {
 			return err
 		}
-		existing[name] = true
-	}
-	cols.Close()
-	addCol := func(name, ddl string) error {
-		if existing[name] {
-			return nil
+		for r.Next() {
+			var cid, notnull, pk int
+			var name, typ string
+			var dflt interface{}
+			if err := r.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+				r.Close()
+				return err
+			}
+			existing[name] = true
 		}
-		_, err := DB.Exec("ALTER TABLE users ADD COLUMN " + name + " " + ddl)
+		r.Close()
+		for name, ddl := range cols {
+			if existing[name] {
+				continue
+			}
+			if _, err := DB.Exec("ALTER TABLE " + table + " ADD COLUMN \"" + name + "\" " + ddl); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := ensureCols("users", map[string]string{
+		"email":         "TEXT",
+		"twofa_secret":  "TEXT",
+		"twofa_enabled": "INTEGER NOT NULL DEFAULT 0",
+		"group":         "TEXT",
+		"avatar":        "TEXT",
+		"invited_by":    "TEXT",
+		"parent":        "TEXT",
+	}); err != nil {
 		return err
 	}
-	if err := addCol("email", "TEXT"); err != nil {
+	if err := ensureCols("tokens", map[string]string{
+		"scope":       "TEXT",
+		"allowed_ips": "TEXT",
+	}); err != nil {
 		return err
 	}
-	if err := addCol("twofa_secret", "TEXT"); err != nil {
-		return err
-	}
-	if err := addCol("twofa_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := ensureCols("channels", map[string]string{
+		"azure_api_version": "TEXT",
+	}); err != nil {
 		return err
 	}
 	return nil
