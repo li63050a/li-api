@@ -177,6 +177,36 @@ tbody tr:hover { background: var(--row-hover); }
 .muted { color: var(--fg-2); }
 .small { font-size: 12px; color: var(--fg-2); }
 .msg { color: var(--danger); min-height: 18px; font-size: 13px; }
+
+/* ---------- 空态 / 加载 ---------- */
+.empty { padding: 18px; text-align: center; }
+.empty .muted { margin: 0; }
+.spin {
+    display: inline-block; width: 12px; height: 12px; margin-right: 6px;
+    border: 2px solid var(--border-strong); border-top-color: var(--primary);
+    border-radius: 50%; animation: gwspin .8s linear infinite; vertical-align: -1px;
+}
+@keyframes gwspin { to { transform: rotate(360deg); } }
+
+/* ---------- 多选下拉（模型选择） ---------- */
+.ms-box { border: 1px solid var(--border-strong); border-radius: 6px; background: var(--card); }
+.ms-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px 0; }
+.chip {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: var(--primary-bg); color: var(--primary); border-radius: 12px;
+    padding: 1px 2px 1px 8px; font-size: 12px; line-height: 1.6;
+}
+.chip-x { border: none; background: none; color: var(--primary); cursor: pointer; font-size: 14px; padding: 0 5px; line-height: 1; }
+.ms-box input {
+    border: none; border-bottom: 1px solid var(--border); box-shadow: none; border-radius: 0;
+    width: 100%; background: transparent; padding: 5px 8px; outline: none; flex: 1 1 100%;
+}
+.ms-box input:focus { border: none; border-bottom: 1px solid var(--border); box-shadow: none; }
+.ms-list { max-height: 180px; overflow: auto; }
+.ms-item { padding: 5px 10px; cursor: pointer; font-size: 13px; }
+.ms-item:hover { background: var(--row-hover); }
+.ms-item.selected { color: var(--primary); font-weight: 600; }
+.ms-empty { padding: 8px 10px; font-size: 13px; }
 code {
     background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 13px;

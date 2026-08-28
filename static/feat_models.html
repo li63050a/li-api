@@ -21,6 +21,11 @@
   </div>
   <div class="card">
     <p class="msg" id="msg"></p>
+    <div id="emptyHint" style="display:none;margin-bottom:10px">
+      <p class="muted" style="margin:0 0 8px">模型价格尚未配置，成本将按默认倍率 1 计算</p>
+      <button class="btn btn-primary" id="btn-preset" onclick="importPresets()">导入默认预设</button>
+      <span id="presetMsg" class="msg" style="margin-left:8px"></span>
+    </div>
     <table>
       <thead>
         <tr>
@@ -53,10 +58,53 @@ async function load() {
   $('btn-save').disabled = !isRoot;
   $('btn-import').disabled = !isRoot;
   $('btn-add').disabled = !isRoot;
+  $('btn-preset').disabled = !isRoot;
   const r = await api('/api/feat/models');
   if (!r.ok) { showMsg('加载失败', false); return; }
   editing = await r.json();
   render();
+  $('emptyHint').style.display = Object.keys(editing).length === 0 ? '' : 'none';
+}
+
+async function importPresets() {
+  if (!isRoot) { showMsg('无权限', false); return; }
+  const pm = $('presetMsg');
+  pm.textContent = '导入中…';
+  pm.style.color = 'var(--fg-2)';
+  try {
+    const r = await api('/api/model_presets');
+    if (!r.ok) { pm.textContent = '获取预设失败：' + r.status; pm.style.color = 'var(--danger)'; return; }
+    const d = await r.json();
+    const ratio = d.model_ratio || {};
+    const cr = d.completion_ratio || {};
+    const obj = {};
+    Object.keys(ratio).forEach(k => {
+      obj[k] = {
+        ratio: Number(ratio[k]) || 0,
+        completion_ratio: cr[k] != null ? (Number(cr[k]) || 0) : (Number(ratio[k]) || 0)
+      };
+    });
+    if (Object.keys(obj).length === 0) {
+      Object.keys(cr).forEach(k => { obj[k] = { ratio: Number(cr[k]) || 0, completion_ratio: Number(cr[k]) || 0 }; });
+    }
+    const sr = await api('/api/feat/models', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj)
+    });
+    if (sr.ok) {
+      pm.textContent = '已导入 ' + Object.keys(obj).length + ' 条默认预设';
+      pm.style.color = 'var(--success)';
+      $('emptyHint').style.display = 'none';
+      await load();
+    } else {
+      pm.textContent = '保存失败：' + sr.status;
+      pm.style.color = 'var(--danger)';
+    }
+  } catch (e) {
+    pm.textContent = '请求出错';
+    pm.style.color = 'var(--danger)';
+  }
 }
 
 function render() {

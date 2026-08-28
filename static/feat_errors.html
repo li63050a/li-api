@@ -45,26 +45,26 @@ function statusBadge(s) {
 
 async function loadErrors() {
   const body = $('body');
-  body.innerHTML = '<tr><td colspan="6" class="muted">加载中…</td></tr>';
+  loadState(body, '加载中…');
   const limit = Math.min(500, Math.max(1, parseInt(v('fLimit'), 10) || 100));
   const qs = new URLSearchParams({ page: page, limit: limit });
   const m = v('fModel').trim();
   if (m) qs.set('model', m);
   let d = {};
   try {
-    const r = await api('/api/logs?' + qs.toString());
+    const r = await apiWithTimeout('/api/logs?' + qs.toString());
     if (!r.ok) {
-      body.innerHTML = '<tr><td colspan="6" class="msg">获取失败（' + r.status + '）</td></tr>';
+      emptyState(body, '获取失败');
       return;
     }
     d = await r.json();
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="6" class="msg">获取失败</td></tr>';
+    emptyState(body, '获取失败');
     return;
   }
   const logs = (d.logs || []).filter(l => parseInt(l.status, 10) >= 400);
   if (logs.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">暂无错误日志（status ≥ 400）</td></tr>';
+    emptyState(body, '暂无错误日志');
     return;
   }
   body.innerHTML = logs.map(l => `

@@ -64,6 +64,8 @@ func runDailyTasksIfDue() {
 	channelHealthPing()
 	statsSnapshot()
 	tokenExpiryReminder()
+	logRetention()
+	dbBackup()
 	runMonthlyTaskIfDue()
 }
 
@@ -293,6 +295,132 @@ func tokenExpiryReminder() {
 		}
 		_ = model.KVSet("reminded."+t.Key, "1")
 	}
+}
+
+// logRetention 日志保留：access.log 超过 1MB 时重写，仅保留 retention_days 天内的行
+func logRetention() {
+	path := filepath.Join(model.DataDir(), "access.log")
+	fi, err := os.Stat(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("scheduler: stat access.log: %v", err)
+		}
+		recordTask("log_retention", "no access.log")
+		return
+	}
+	if fi.Size() <= 1<<20 {
+		recordTask("log_retention", "below 1MB, skip")
+		return
+	}
+	days := 30
+	if v, ok := model.KVGet("log.retention_days"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			days = n
+		}
+	}
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	in, err := os.Open(path)
+	if err != nil {
+		log.Printf("scheduler: open access.log: %v", err)
+		recordTask("log_retention", "failed: "+err.Error())
+		return
+	}
+	defer in.Close()
+
+	tmp := path + ".tmp"
+	out, err := os.Create(tmp)
+	if err != nil {
+		log.Printf("scheduler: create tmp log: %v", err)
+		recordTask("log_retention", "failed: "+err.Error())
+		return
+	}
+	kept := 0
+	sc := bufio.NewScanner(in)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var e struct {
+			Time string `json:"time"`
+		}
+		if json.Unmarshal([]byte(line), &e) != nil {
+			continue
+		}
+		t, ok := parseLogTime(e.Time)
+		if !ok {
+			continue
+		}
+		if t.Before(cutoff) {
+			continue
+		}
+		out.WriteString(line)
+		out.WriteString("\n")
+		kept++
+	}
+	if err := sc.Err(); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		log.Printf("scheduler: scan access.log: %v", err)
+		recordTask("log_retention", "failed: "+err.Error())
+		return
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		recordTask("log_retention", "failed: "+err.Error())
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		log.Printf("scheduler: rename access.log: %v", err)
+		recordTask("log_retention", "failed: "+err.Error())
+		return
+	}
+	recordTask("log_retention", fmt.Sprintf("kept %d line(s), days=%d", kept, days))
+}
+
+// dbBackup 数据库备份：复制 gateway.db 到 backup/gateway-YYYYMMDD.db，并清理 7 天前的备份
+func dbBackup() {
+	dataDir := model.DataDir()
+	src := filepath.Join(dataDir, "gateway.db")
+	if _, err := os.Stat(src); err != nil {
+		recordTask("db_backup", "no gateway.db")
+		return
+	}
+	backupDir := filepath.Join(dataDir, "backup")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		log.Printf("scheduler: mkdir backup: %v", err)
+		recordTask("db_backup", "failed: "+err.Error())
+		return
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		log.Printf("scheduler: read gateway.db: %v", err)
+		recordTask("db_backup", "failed: "+err.Error())
+		return
+	}
+	dateStr := time.Now().Format("20060102")
+	if err := os.WriteFile(filepath.Join(backupDir, "gateway-"+dateStr+".db"), data, 0o644); err != nil {
+		log.Printf("scheduler: write backup: %v", err)
+		recordTask("db_backup", "failed: "+err.Error())
+		return
+	}
+	// 清理 7 天前的备份（按文件名中的日期后缀解析）
+	cutoff := time.Now().AddDate(0, 0, -7)
+	entries, err := os.ReadDir(backupDir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasPrefix(e.Name(), "gateway-") || !strings.HasSuffix(e.Name(), ".db") {
+				continue
+			}
+			datePart := strings.TrimSuffix(strings.TrimPrefix(e.Name(), "gateway-"), ".db")
+			if t, perr := time.Parse("20060102", datePart); perr == nil && t.Before(cutoff) {
+				_ = os.Remove(filepath.Join(backupDir, e.Name()))
+			}
+		}
+	}
+	recordTask("db_backup", "backup="+dateStr)
 }
 
 // schedulerSendMail 通过全局 SMTP 配置发送邮件（SMTPUser 为空时不使用认证）

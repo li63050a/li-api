@@ -15,7 +15,7 @@
   </div>
 
   <div class="stat-cards">
-    <div class="stat-card"><div class="stat-title">余额</div><div class="stat-value" id="balRemain">—</div></div>
+    <div class="stat-card"><div class="stat-title" id="balRemainTitle">余额</div><div class="stat-value" id="balRemain">—</div></div>
     <div class="stat-card"><div class="stat-title">总额度</div><div class="stat-value" id="balQuota">—</div></div>
     <div class="stat-card"><div class="stat-title">已用</div><div class="stat-value" id="balUsed">—</div></div>
   </div>
@@ -23,9 +23,16 @@
   <div class="card">
     <h3>充值</h3>
     <div class="form-group">
+      <span class="small">快捷金额：</span>
+      <button class="btn btn-default" onclick="setAmount(10)">+10</button>
+      <button class="btn btn-default" onclick="setAmount(50)">+50</button>
+      <button class="btn btn-default" onclick="setAmount(100)">+100</button>
+      <button class="btn btn-default" onclick="setAmount(500)">+500</button>
+    </div>
+    <div class="form-group">
       <input id="amount" type="number" min="0" step="1" placeholder="充值金额（USD）">
       <select id="gateway">
-        <option value="mock">Mock（模拟）</option>
+        <option value="mock">模拟支付(仅测试)</option>
         <option value="stripe">Stripe</option>
         <option value="epay">Epay（易支付）</option>
         <option value="pancake">Pancake</option>
@@ -33,6 +40,7 @@
       <button class="btn btn-primary" onclick="createOrder()">去支付</button>
       <span id="payMsg" class="msg"></span>
     </div>
+    <p class="hint" id="mockNote" style="display:none">模拟网关仅用于测试，正式使用请配置真实支付</p>
     <div id="payResult" style="display:none">
       <p class="small">支付链接（点击打开，可复制）：</p>
       <div class="form-group">
@@ -70,6 +78,35 @@ function statusHtml(s) {
 function pick(x, keys, def) {
   for (const k of keys) { if (x[k] != null) return x[k]; }
   return def;
+}
+
+function setAmount(n) {
+  $('amount').value = n;
+}
+
+function syncMockLabel() {
+  const t = $('balRemainTitle');
+  if (t) t.textContent = $('gateway').value === 'mock' ? '余额(测试额度)' : '余额';
+}
+
+async function loadPaySettings() {
+  try {
+    const r = await api('/api/setting/pay');
+    if (r.ok) {
+      const d = await r.json();
+      if (d.mock_enabled === false) {
+        const opt = $('gateway').querySelector('option[value="mock"]');
+        if (opt) opt.remove();
+      } else {
+        $('mockNote').style.display = '';
+      }
+    } else {
+      $('mockNote').style.display = '';
+    }
+  } catch (e) {
+    $('mockNote').style.display = '';
+  }
+  syncMockLabel();
 }
 
 async function loadWallet() {
@@ -154,8 +191,11 @@ function copyPayUrl() {
     .catch(() => alert('复制失败，请手动复制'));
 }
 
+$('gateway').addEventListener('change', syncMockLabel);
+
 (async () => {
   try { await ensureAuth(); } catch (e) { return; }
+  await loadPaySettings();
   await loadWallet();
 })();
 </script>

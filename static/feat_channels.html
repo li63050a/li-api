@@ -39,6 +39,10 @@
       <input id="cRateLimit" type="number" placeholder="每分钟限流" value="0">
       <label><input type="checkbox" id="cStatus" checked> 启用</label>
     </div>
+    <div class="form-group">
+      <button class="btn btn-warning" onclick="testChannelForm()">测试连接</button>
+      <span id="formTestMsg" class="msg" style="min-height:18px"></span>
+    </div>
   </div>
 
   <div id="groupOverview" style="margin:12px 0;color:var(--fg-2);font-size:13px"></div>
@@ -86,6 +90,24 @@ async function loadChannels(){ const res=await api('/admin/channels'); if(!res.o
 async function testChannel(id){ try{ const res=await api('/admin/channels/test/'+id,{method:'POST'}); const d=await res.json();
   alert('状态码: '+d.status+'\n结果: '+(d.success?'成功 ✓':'失败 ✗')+'\n'+(d.message||'')); }
   catch(e){ alert('测试请求出错: '+e); } }
+async function testChannelForm(){
+  const msg=document.getElementById('formTestMsg');
+  msg.innerHTML='<span class="muted"><span class="spin"></span>测试中…</span>';
+  const keys=v('cKeys').split(',').map(s=>s.trim()).filter(Boolean);
+  const data={base_url:v('cBaseURL'),auth_type:v('cAuthType'),auth_key:v('cAuthKey'),key:keys[0]||''};
+  try{
+    const res=await apiWithTimeout('/admin/channels/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    let d={}; try{ d=await res.json(); }catch(e){ /* 空响应 */ }
+    if(res.ok && d.ok){
+      const mc=d.models_count!=null?d.models_count:0;
+      msg.innerHTML='<span style="color:var(--success)">✓ 连通 '+(d.status!=null?d.status:200)+'，'+mc+' 个模型'+(d.latency_ms!=null?'（'+d.latency_ms+'ms）':'')+'</span>';
+    }else{
+      msg.innerHTML='<span style="color:var(--danger)">✗ '+escapeHtml(d.error||d.message||('HTTP '+res.status))+'</span>';
+    }
+  }catch(e){
+    msg.innerHTML='<span style="color:var(--danger)">✗ 测试请求出错：'+escapeHtml(e.message||e)+'</span>';
+  }
+}
 async function addChannel(){ const data={name:v('cName'),type:v('cType'),base_url:v('cBaseURL'),keys:v('cKeys'),
   auth_type:v('cAuthType'),auth_key:v('cAuthKey'),models:v('cModels'),model_mapping:v('cModelMap'),group:v('cGroup'),
   priority:parseInt(v('cPriority'))||0,weight:parseInt(v('cWeight'))||1,rate_limit:parseInt(v('cRateLimit'))||0,

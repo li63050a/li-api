@@ -44,6 +44,45 @@ function notifyHeight() {
 
 function $(id) { return document.getElementById(id); }
 function v(id) { return document.getElementById(id).value; }
+
+// 空态：统一展示「暂无数据」。对 tbody 自动生成全宽空行，其余容器渲染 .empty
+function emptyState(el, text) {
+    if (!el) return;
+    const t = escapeHtml(text == null ? '暂无数据' : String(text));
+    if (el.tagName === 'TBODY') {
+        let cols = 1;
+        const tbl = el.closest('table');
+        if (tbl) cols = tbl.querySelectorAll('thead th').length;
+        el.innerHTML = '<tr><td colspan="' + Math.max(1, cols) + '" class="muted">' + t + '</td></tr>';
+        return;
+    }
+    el.innerHTML = '<div class="empty"><p class="muted">' + t + '</p></div>';
+}
+
+// 加载态：spinner + 文案，用于「spinner -> 结果」模式
+function loadState(el, text) {
+    if (!el) return;
+    const t = escapeHtml(text == null ? '加载中…' : String(text));
+    if (el.tagName === 'TBODY') {
+        let cols = 1;
+        const tbl = el.closest('table');
+        if (tbl) cols = tbl.querySelectorAll('thead th').length;
+        el.innerHTML = '<tr><td colspan="' + Math.max(1, cols) + '" class="muted"><span class="spin"></span>' + t + '</td></tr>';
+        return;
+    }
+    el.innerHTML = '<div class="empty"><p class="muted"><span class="spin"></span>' + t + '</p></div>';
+}
+
+// 带超时守卫的请求：超时自动中断，避免「加载中…」卡死
+async function apiWithTimeout(path, opts, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms || 12000);
+    try {
+        return await api(path, Object.assign({}, opts, { signal: ctrl.signal }));
+    } finally {
+        clearTimeout(timer);
+    }
+}
 function fmtTime(s) {
     if (!s) return '';
     const d = new Date(s);

@@ -8,11 +8,142 @@
     <style>
         body { padding: 0; }
         .login-wrap { min-height: 100vh; }
+
+        /* ---------- 介绍页（landing） ---------- */
+        .landing { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+        .landing-nav {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 32px; background: var(--card); border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 90;
+        }
+        .landing-brand { display: flex; align-items: center; gap: 10px; }
+        .landing-name { font-size: 16px; font-weight: 600; color: var(--fg); }
+        .landing-sub { font-size: 12px; color: var(--fg-2); }
+        .landing-actions { display: flex; gap: 10px; }
+        .landing-container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+        .landing-hero {
+            padding: 72px 24px 56px; text-align: center;
+            background: radial-gradient(620px 260px at 50% -40px, var(--primary-bg), transparent 70%);
+        }
+        .landing-title {
+            margin: 0 0 16px; font-size: 44px; line-height: 1.22; font-weight: 700; letter-spacing: .02em;
+            background: linear-gradient(120deg, var(--primary), #53a7ff);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }
+        .landing-slogan { margin: 0 auto 32px; max-width: 640px; font-size: 17px; color: var(--fg-2); }
+        .landing-cta { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+        .btn-lg { padding: 9px 28px; font-size: 15px; border-radius: 8px; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; padding: 8px 0 72px; }
+        .feature-card {
+            background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 24px; box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s;
+        }
+        .feature-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); }
+        .feature-icon {
+            width: 44px; height: 44px; border-radius: 10px; margin-bottom: 14px;
+            background: linear-gradient(135deg, var(--primary), #53a7ff); color: #fff;
+            display: flex; align-items: center; justify-content: center; font-size: 22px;
+        }
+        .feature-card h3 { margin: 0 0 8px; font-size: 16px; }
+        .feature-card p { margin: 0; color: var(--fg-2); font-size: 13px; line-height: 1.7; }
+        .landing-footer {
+            margin-top: auto; text-align: center; padding: 22px; color: var(--fg-3); font-size: 13px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* ---------- 登录卡（返回首页 / 注册开关） ---------- */
+        .auth-back { margin-top: 16px; text-align: center; font-size: 13px; }
     </style>
 </head>
 <body>
+    <!-- 初始化页（全新安装，无任何用户时显示） -->
+    <div id="setup" class="login-wrap" style="display:none">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="brand-logo">API</div>
+                <div>
+                    <div class="login-title">初始化系统</div>
+                    <div class="login-sub" id="setupSub">创建第一个管理员账户</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <input id="su" placeholder="用户名" />
+            </div>
+            <div class="form-group">
+                <input id="sp" type="password" placeholder="密码" />
+            </div>
+            <div class="form-group">
+                <input id="sp2" type="password" placeholder="确认密码" />
+            </div>
+            <div class="login-btns">
+                <button class="btn btn-primary" onclick="setup()">初始化管理员</button>
+            </div>
+            <p id="setupMsg" class="msg" style="margin:12px 0 0"></p>
+        </div>
+    </div>
+
+    <!-- 介绍页（未登录默认首页） -->
+    <div id="landing" class="landing" style="display:none">
+        <nav class="landing-nav">
+            <div class="landing-brand">
+                <div class="brand-logo">API</div>
+                <div>
+                    <div class="landing-name" id="lNavName">API 网关</div>
+                    <div class="landing-sub">管理控制台</div>
+                </div>
+            </div>
+            <div class="landing-actions">
+                <button class="btn btn-default" onclick="showAuth()">登录</button>
+                <button class="btn btn-primary js-register" onclick="showAuth()">创建账户</button>
+            </div>
+        </nav>
+
+        <div class="landing-container">
+            <div class="announce-bar" id="landingAnnounce" style="display:none">
+                <span id="landingAnnounceText"></span>
+                <button class="announce-close" onclick="this.parentElement.style.display='none'" title="关闭">×</button>
+            </div>
+        </div>
+
+        <section class="landing-hero">
+            <h1 class="landing-title" id="lHeroName">API 网关</h1>
+            <p class="landing-slogan">一站式多模型聚合 · AI 网关管理平台，统一接入、透明计费、实时统计、安全可控。</p>
+            <div class="landing-cta">
+                <button class="btn btn-primary btn-lg" onclick="showAuth()">登录</button>
+                <button class="btn btn-default btn-lg js-register" onclick="showAuth()">创建账户</button>
+            </div>
+        </section>
+
+        <div class="landing-container">
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⇄</div>
+                    <h3>多模型聚合</h3>
+                    <p>一次接入 GPT、Claude、Gemini 等主流模型，统一路由、自动切换，无需分别对接。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">¥</div>
+                    <h3>统一计费</h3>
+                    <p>基于消费统计的透明计费体系，配额、倍率、账单明细一目了然，成本清晰可控。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⌁</div>
+                    <h3>实时统计</h3>
+                    <p>使用日志与消费统计实时呈现，请求量、耗时与费用尽在掌握。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">✜</div>
+                    <h3>安全可控</h3>
+                    <p>令牌鉴权、安全限额、审计日志与全链路防护，守护每一次模型调用。</p>
+                </div>
+            </div>
+        </div>
+
+        <footer class="landing-footer" id="lFooter">API 网关 · 管理控制台</footer>
+    </div>
+
     <!-- 登录/注册 -->
-    <div id="auth" class="login-wrap">
+    <div id="auth" class="login-wrap" style="display:none">
         <div class="login-card">
             <div class="login-brand">
                 <div class="brand-logo">API</div>
@@ -29,9 +160,10 @@
             </div>
             <div class="login-btns">
                 <button class="btn btn-primary" onclick="login()">登录</button>
-                <button class="btn btn-default" onclick="register()">注册</button>
+                <button class="btn btn-default js-register" onclick="register()">注册</button>
             </div>
             <p id="authMsg" class="msg" style="margin:12px 0 0"></p>
+            <p class="auth-back"><a href="#" onclick="return showLanding()">← 返回首页</a></p>
         </div>
     </div>
 
@@ -150,6 +282,82 @@
     }
     function v(id){ return document.getElementById(id).value; }
 
+    // 公共信息缓存（来自 /api/public，含 needs_setup / open_register / site_name / announcement）
+    var __pub = { needs_setup:false, open_register:true, site_name:'API 网关', announcement:'' };
+
+    // 智能门控：决定首次访问展示 控制台 / 初始化页 / 介绍页
+    async function boot(){
+        try{
+            const r = await fetch('/api/public', {headers:{Accept:'application/json'}});
+            if(r.ok){
+                const d = await r.json();
+                if(d && typeof d === 'object') __pub = Object.assign({}, __pub, d);
+            }
+        }catch(e){}
+        // 已有令牌：尝试直接进入控制台
+        if(getToken()){
+            try{
+                const r = await api('/api/user/self');
+                if(r.ok){ enterApp(); return; }
+            }catch(e){}
+            clearToken();
+        }
+        if(__pub.needs_setup){ showSetup(); return; }
+        showLanding();
+    }
+
+    function showSetup(){
+        document.getElementById('landing').style.display='none';
+        document.getElementById('auth').style.display='none';
+        document.getElementById('app').style.display='none';
+        document.getElementById('setupSub').textContent = '创建「' + (__pub.site_name || 'API 网关') + '」的第一个管理员账户';
+        document.getElementById('setup').style.display='flex';
+    }
+
+    function showLanding(){
+        document.getElementById('setup').style.display='none';
+        document.getElementById('auth').style.display='none';
+        document.getElementById('app').style.display='none';
+        const name = __pub.site_name || 'API 网关';
+        document.getElementById('lNavName').textContent = name;
+        document.getElementById('lHeroName').textContent = name;
+        document.getElementById('lFooter').textContent = name + ' · 管理控制台';
+        applyRegisterVisibility();
+        // 公告横幅：优先用 /api/public 返回的，否则回退到 /api/announcement
+        if(__pub.announcement){
+            renderLandingAnnounce(__pub.announcement);
+        }else{
+            fetch('/api/announcement')
+                .then(function(r){ return r.ok ? r.json() : null; })
+                .then(function(d){ if(d && d.announcement) renderLandingAnnounce(d.announcement); })
+                .catch(function(){});
+        }
+        document.getElementById('landing').style.display='flex';
+    }
+
+    function renderLandingAnnounce(text){
+        const bar = document.getElementById('landingAnnounce');
+        if(!bar || !text) return;
+        document.getElementById('landingAnnounceText').textContent = String(text);
+        bar.style.display='block';
+    }
+
+    function showAuth(){
+        document.getElementById('landing').style.display='none';
+        document.getElementById('setup').style.display='none';
+        document.getElementById('app').style.display='none';
+        applyRegisterVisibility();
+        document.getElementById('auth').style.display='flex';
+    }
+
+    // open_register=false 时隐藏所有注册入口（介绍页 CTA + 登录卡）
+    function applyRegisterVisibility(){
+        const on = __pub.open_register !== false;
+        document.querySelectorAll('.js-register').forEach(function(b){
+            b.style.display = on ? '' : 'none';
+        });
+    }
+
     async function login(){
         const r = await fetch('/api/user/login', {method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({username:v('u'), password:v('p')})});
@@ -157,10 +365,37 @@
         const d = await r.json(); setToken(d.token); enterApp();
     }
     async function register(){
+        if(__pub.open_register === false){
+            document.getElementById('authMsg').textContent='注册已关闭，请联系管理员';
+            return;
+        }
         const r = await fetch('/api/user/register', {method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({username:v('u'), password:v('p')})});
         if(!r.ok){ document.getElementById('authMsg').textContent='注册失败：'+(await r.text()); return; }
         const d = await r.json(); setToken(d.token); enterApp();
+    }
+
+    // 初始化管理员（全新安装时通过 /api/setup 创建首个 root 账户）
+    async function setup(){
+        const u = v('su'), p = v('sp'), p2 = v('sp2');
+        const msg = document.getElementById('setupMsg');
+        if(!u || !p){ msg.textContent='请填写用户名与密码'; return; }
+        if(p !== p2){ msg.textContent='两次输入的密码不一致'; return; }
+        try{
+            const r = await fetch('/api/setup', {method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({username:u, password:p})});
+            if(!r.ok){
+                let t = '';
+                try{ t = await r.text(); }catch(e){}
+                msg.textContent = '初始化失败：' + (t || r.status);
+                return;
+            }
+            const d = await r.json();
+            setToken(d.token);
+            enterApp();
+        }catch(e){
+            msg.textContent = '初始化失败：' + e.message;
+        }
     }
     function logout(){ clearToken(); location.reload(); }
 
@@ -197,6 +432,8 @@
         const r = await api('/api/user/self');
         if(!r.ok){ clearToken(); location.reload(); return; }
         const d = await r.json();
+        document.getElementById('setup').style.display='none';
+        document.getElementById('landing').style.display='none';
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='flex';
         const isRoot = d.role === 'root';
@@ -223,8 +460,47 @@
         const first = document.querySelector('#menu .menu-item[data-page="feat_usage"]');
         if(first) first.classList.add('active');
         loadExt('feat_usage', '仪表盘');
+        if(isRoot) check2FASecurity();
     }
-    if(getToken()) enterApp();
+    boot();
+
+    // 管理员安全提示：root 且未开启 2FA 时展示可关闭横幅
+    async function check2FASecurity(){
+        if(sessionStorage.getItem('gw_sec_banner') === '1') return;
+        try{
+            const r = await api('/api/user/2fa/codes');
+            if(!r.ok) return;
+            const d = await r.json();
+            if((d.codes || []).length > 0) return;
+        }catch(e){ return; }
+        const app = document.getElementById('app');
+        const content = app && app.querySelector('.content');
+        if(!content) return;
+        const bar = document.createElement('div');
+        bar.className = 'announce-bar';
+        const span = document.createElement('span');
+        span.textContent = '建议开启两步验证(2FA)与修改强密码，';
+        const link = document.createElement('a');
+        link.href = '#';
+        link.style.fontWeight = '600';
+        link.textContent = '前往安全设置';
+        link.addEventListener('click', function(){
+            nav('feat_security', '安全与限额', document.querySelector('#menu .menu-item[data-page="feat_security"]'));
+            return false;
+        });
+        const close = document.createElement('button');
+        close.className = 'announce-close';
+        close.textContent = '×';
+        close.title = '关闭';
+        close.onclick = function(){
+            sessionStorage.setItem('gw_sec_banner', '1');
+            bar.remove();
+        };
+        bar.appendChild(span);
+        bar.appendChild(link);
+        bar.appendChild(close);
+        content.insertBefore(bar, content.firstChild);
+    }
 
     function toggleTheme(){
         const dark = document.documentElement.classList.toggle('dark');

@@ -25,6 +25,7 @@
       <input id="models" type="text" placeholder="允许模型 (逗号分隔, 留空全部)">
       <input id="expired_at" type="datetime-local" placeholder="过期时间">
     </div>
+    <p class="hint" style="margin-top:-4px">额度：0=不限额；过期时间：-1=永不过期</p>
     <div class="form-group">
       <button class="btn btn-primary" id="submitBtn" onclick="submitBatch()">生成</button>
       <button class="btn btn-success" id="exportBtn" style="display:none" onclick="exportJSON()">导出 JSON</button>

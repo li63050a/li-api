@@ -27,7 +27,7 @@ type Setting struct {
 
 var (
 	settingMu sync.RWMutex
-	setting   = Setting{Mode: "self", OpenRegister: true, ModelRatio: map[string]float64{}, CompletionRatio: map[string]float64{}}
+	setting   = Setting{Mode: "self", OpenRegister: false, ModelRatio: map[string]float64{}, CompletionRatio: map[string]float64{}}
 )
 
 // InitSettings 加载设置，不存在则写入默认值
@@ -88,7 +88,7 @@ func InitSettings() error {
 			return nil
 		}
 		// no row and no file: defaults
-		setting = Setting{Mode: "self", OpenRegister: true, ModelRatio: map[string]float64{}, CompletionRatio: map[string]float64{}}
+		setting = Setting{Mode: "self", OpenRegister: false, ModelRatio: map[string]float64{}, CompletionRatio: map[string]float64{}}
 		if _, derr := db.DB.Exec(
 			"INSERT INTO settings (id, mode, open_register, model_ratio, completion_ratio, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, notify_email) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			setting.Mode, boolToInt(setting.OpenRegister), "{}", "{}", setting.SMTPHost, setting.SMTPPort, setting.SMTPUser, setting.SMTPPass, setting.SMTPFrom, setting.NotifyEmail,

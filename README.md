@@ -99,6 +99,14 @@
 | 请求重放 | `/api/admin/replay` 按日志时间取回请求体供调试 |
 | 倍率覆盖 | `/api/overrides` 用户组×令牌组倍率覆盖矩阵 |
 | 订阅管理 | `/api/subscriptions` 管理员查看 / 重置订阅 |
+| 初始化向导 | 全新安装自动进入 `/setup` 初始化页创建首个管理员；`/api/public` 供首页判断 |
+| 开屏首页 | 未登录访问显示产品介绍落地页 + 登录/创建账户按钮；注册关闭时按钮隐藏 |
+| 注册开关 | `open_register` **默认关闭**；开启时可选邮件验证（`register.verify_email`） |
+| 渠道一键测试 | 渠道表单「测试连接」→ `/admin/channels/test`，保存前验证 Base URL/密钥 |
+| 批量创建用户 | `/admin/users/batch` 一次性创建多个账号 |
+| 令牌套餐预设 | 创建令牌可选 免费/基础/高级 预设；模型支持搜索多选（`/api/models_list`） |
+| 日志保留 | 后台定时清理过期日志（`log.retention_days`，默认 30 天）+ 每日数据库备份（保留 7 份） |
+| 默认额度 | 新注册用户额度取 `register.default_quota`（默认 100000） |
 
 > 技术栈：**纯 Go + 内嵌 HTML/CSS/JS，无 Node.js 构建链**，`go build` 直接产出单个二进制即用。
 

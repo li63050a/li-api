@@ -119,20 +119,27 @@ function statusBadge(s) {
   return '<span class="badge ' + cls + '">' + escapeHtml(s) + '</span>';
 }
 
+function failStats() {
+  ['stTotalReq', 'stTodayReq', 'stTotalCost', 'stTodayCost', 'stTotalTok',
+   'stActiveUsers', 'stNewUsers', 'stRevenue'].forEach(id => $(id).textContent = '0');
+  $('trendWrap').style.display = 'none';
+  emptyState($('trendChart'), '获取失败');
+  emptyState($('modelChart'), '获取失败');
+  emptyState($('statusBody'), '获取失败');
+  emptyState($('modelErrBody'), '获取失败');
+  emptyState($('recentBody'), '获取失败');
+}
+
 async function loadStats() {
   try { await ensureAuth(); } catch (e) { return; }
   $('stTotalReq').textContent = '加载中…';
-  const r = await api('/api/stats');
-  if (!r.ok) {
-    $('stTotalReq').textContent = '加载失败';
-    $('modelChart').textContent = '加载失败';
-    $('recentBody').innerHTML = '<tr><td colspan="6" class="muted">加载失败</td></tr>';
-    $('trendWrap').style.display = 'none';
-    $('trendChart').innerHTML = '<span class="muted">加载失败</span>';
-    $('statusBody').innerHTML = '<tr><td colspan="4" class="muted">加载失败</td></tr>';
-    $('modelErrBody').innerHTML = '<tr><td colspan="3" class="muted">加载失败</td></tr>';
-    return;
-  }
+  loadState($('trendChart'));
+  loadState($('modelChart'));
+  let r;
+  try {
+    r = await apiWithTimeout('/api/stats');
+  } catch (e) { failStats(); return; }
+  if (!r.ok) { failStats(); return; }
   const d = await r.json();
   $('stTotalReq').textContent = fmt(d.total_requests);
   $('stTodayReq').textContent = fmt(d.today_requests);
@@ -155,7 +162,7 @@ function drawTrend(list) {
   const box = $('trendChart');
   if (!Array.isArray(list) || list.length === 0) {
     wrap.style.display = 'none';
-    box.innerHTML = '<span class="muted">暂无按日趋势数据（当前版本未提供 by_day）</span>';
+    emptyState(box, '暂无按日趋势数据');
     return;
   }
   const items = list.slice(-14).map(x => ({
@@ -165,7 +172,7 @@ function drawTrend(list) {
   }));
   if (items.length === 0) {
     wrap.style.display = 'none';
-    box.innerHTML = '<span class="muted">暂无按日趋势数据（当前版本未提供 by_day）</span>';
+    emptyState(box, '暂无按日趋势数据');
     return;
   }
   wrap.style.display = '';
@@ -248,7 +255,7 @@ function drawTrend(list) {
 
 function renderChart(list) {
   const el = $('modelChart');
-  if (list.length === 0) { el.innerHTML = '<span class="muted">暂无数据</span>'; return; }
+  if (list.length === 0) { emptyState(el, '暂无数据'); return; }
   const maxReq = Math.max.apply(null, list.map(m => m.requests || 0)) || 1;
   const maxCost = Math.max.apply(null, list.map(m => m.cost || 0)) || 1;
   el.innerHTML = '<table style="box-shadow:none"><tbody>' + list.map(m => {
@@ -269,7 +276,7 @@ function renderChart(list) {
 function renderStatus(map) {
   const body = $('statusBody');
   const entries = Object.keys(map || {}).map(k => [String(k), Number(map[k] || 0)]);
-  if (entries.length === 0) { body.innerHTML = '<tr><td colspan="4" class="muted">暂无数据</td></tr>'; return; }
+  if (entries.length === 0) { emptyState(body, '暂无数据'); return; }
   entries.sort((a, b) => (Number(a[0]) - Number(b[0])) || (b[1] - a[1]));
   const total = entries.reduce((s, e) => s + e[1], 0) || 1;
   const max = Math.max.apply(null, entries.map(e => e[1])) || 1;
@@ -286,7 +293,7 @@ function renderStatus(map) {
 
 function renderRecent(list) {
   const body = $('recentBody');
-  if (list.length === 0) { body.innerHTML = '<tr><td colspan="6" class="muted">暂无记录</td></tr>'; return; }
+  if (list.length === 0) { emptyState(body, '暂无记录'); return; }
   body.innerHTML = list.map(e => `<tr>
     <td style="white-space:nowrap">${escapeHtml(fmtTime(e.time))}</td>
     <td style="white-space:nowrap">${escapeHtml(e.model || '-')}</td>
@@ -299,7 +306,7 @@ function renderRecent(list) {
 
 function renderModelError(list) {
   const body = $('modelErrBody');
-  if (!Array.isArray(list) || list.length === 0) { body.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>'; return; }
+  if (!Array.isArray(list) || list.length === 0) { emptyState(body, '暂无数据'); return; }
   body.innerHTML = list.map(e => `<tr>
     <td>${escapeHtml(e.model)}</td>
     <td>${statusBadge(e.status)}</td>

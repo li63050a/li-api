@@ -36,17 +36,17 @@
 <script>
 async function loadPlans() {
   const body = $('planBody');
-  body.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  loadState(body, '加载中…');
   try {
-    const r = await api('/api/plans');
+    const r = await apiWithTimeout('/api/plans');
     if (!r.ok) {
-      body.innerHTML = '<tr><td colspan="4" class="muted">获取失败（' + r.status + '）</td></tr>';
+      emptyState(body, '获取失败');
       return;
     }
     const d = await r.json();
     const plans = d.plans || [];
     if (plans.length === 0) {
-      body.innerHTML = '<tr><td colspan="4" class="muted">暂无套餐</td></tr>';
+      emptyState(body, '暂无套餐');
       return;
     }
     body.innerHTML = plans.map(p => `
@@ -57,17 +57,17 @@ async function loadPlans() {
         <td><button class="btn btn-primary" data-name="${escapeHtml(p.name)}" onclick="subscribe(this)">订阅</button></td>
       </tr>`).join('');
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="4" class="muted">获取失败</td></tr>';
+    emptyState(body, '获取失败');
   }
 }
 
 async function loadUsage() {
   const box = $('usageBox');
-  box.innerHTML = '<div class="muted">加载中…</div>';
+  loadState(box, '加载中…');
   try {
-    const r = await api('/api/user/usage');
+    const r = await apiWithTimeout('/api/user/usage');
     if (!r.ok) {
-      box.innerHTML = '<div class="muted">获取失败</div>';
+      emptyState(box, '获取失败');
       return;
     }
     const u = await r.json();
@@ -83,7 +83,7 @@ async function loadUsage() {
       '<div class="info-item"><div class="info-label">' + i.k + '</div><div class="info-value">' + escapeHtml(i.v) + '</div></div>'
     ).join('');
   } catch (e) {
-    box.innerHTML = '<div class="muted">获取失败</div>';
+    emptyState(box, '获取失败');
   }
 }
 

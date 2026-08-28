@@ -59,41 +59,49 @@
       const pu = $('perUserBody');
       const tm = $('topModelsBody');
       tEl.textContent = '加载中…';
-      pu.innerHTML = '<tr><td colspan="2" class="muted">加载中…</td></tr>';
-      tm.innerHTML = '<tr><td colspan="3" class="muted">加载中…</td></tr>';
+      loadState(pu, '加载中…');
+      loadState(tm, '加载中…');
+      let data = null;
       try {
-        const r = await api('/api/feat/usage');
-        if (!r.ok) {
-          tEl.textContent = '获取失败';
-          return;
-        }
-        const data = await r.json();
-        tEl.textContent = Number(data.today_tokens || 0).toLocaleString();
+        const r = await apiWithTimeout('/api/feat/usage');
+        if (!r.ok) { tEl.textContent = '0'; emptyState(pu, '获取失败'); emptyState(tm, '获取失败'); return; }
+        data = await r.json();
+      } catch (e) {
+        tEl.textContent = '0';
+        emptyState(pu, '获取失败');
+        emptyState(tm, '获取失败');
+        return;
+      }
+      const today = Number(data.today_tokens || 0);
+      tEl.textContent = today.toLocaleString();
 
-        if (!data.per_user || data.per_user.length === 0) {
-          pu.innerHTML = '<tr><td colspan="2" class="muted">暂无数据</td></tr>';
-        } else {
-          pu.innerHTML = data.per_user.map(u =>
-            `<tr><td>${escapeHtml(u.username)}</td><td>${Number(u.used || 0).toLocaleString()}</td></tr>`
-          ).join('');
-        }
+      const perUser = data.per_user || [];
+      const topModels = data.top_models || [];
+      const allZero = today === 0 &&
+        !perUser.some(u => Number(u.used || 0) > 0) &&
+        !topModels.some(m => Number(m.tokens || 0) > 0);
 
-        if (!data.top_models || data.top_models.length === 0) {
-          tm.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
-        } else {
-          const max = Math.max.apply(null, data.top_models.map(m => m.tokens || 0)) || 1;
-          tm.innerHTML = data.top_models.map(m => {
-            const v = Number(m.tokens || 0);
-            const pct = Math.round(v / max * 100);
-            return `<tr>
+      if (perUser.length === 0 || allZero) {
+        emptyState(pu);
+      } else {
+        pu.innerHTML = perUser.map(u =>
+          `<tr><td>${escapeHtml(u.username)}</td><td>${Number(u.used || 0).toLocaleString()}</td></tr>`
+        ).join('');
+      }
+
+      if (topModels.length === 0 || allZero) {
+        emptyState(tm);
+      } else {
+        const max = Math.max.apply(null, topModels.map(m => m.tokens || 0)) || 1;
+        tm.innerHTML = topModels.map(m => {
+          const v = Number(m.tokens || 0);
+          const pct = Math.round(v / max * 100);
+          return `<tr>
               <td>${escapeHtml(m.model)}</td>
               <td>${v.toLocaleString()}</td>
               <td><div class="ubar"><div class="ubar-fill" style="width:${pct}%"></div></div></td>
             </tr>`;
-          }).join('');
-        }
-      } catch (e) {
-        tEl.textContent = '错误';
+        }).join('');
       }
     }
 

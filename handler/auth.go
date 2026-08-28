@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,27 @@ var (
 	authFailMu sync.Mutex
 	authFails  = map[string]authFailState{}
 )
+
+// regCodeEntry 注册邮箱验证码条目
+type regCodeEntry struct {
+	code   string
+	expiry time.Time
+}
+
+var (
+	regCodesMu sync.Mutex
+	regCodes   = map[string]regCodeEntry{}
+)
+
+// purgeRegCodesLocked 惰性清理已过期的注册验证码（调用方需持锁）
+func purgeRegCodesLocked() {
+	now := time.Now()
+	for k, v := range regCodes {
+		if now.After(v.expiry) {
+			delete(regCodes, k)
+		}
+	}
+}
 
 // authLoginLocked 返回该用户名当前是否处于锁定期
 func authLoginLocked(username string) bool {
@@ -125,6 +147,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 		Invite   string `json:"invite"`
+		Email    string `json:"email"`
+		Code     string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&cred); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -134,13 +158,65 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		authJSONError(w, http.StatusBadRequest, "captcha required")
 		return
 	}
-	if len(cred.Username) < 3 || len(cred.Password) < 6 {
-		http.Error(w, "用户名至少3位，密码至少6位", http.StatusBadRequest)
+	minLen := 6
+	if v, ok := model.KVGet("security.min_password_len"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			minLen = n
+		}
+	}
+	if len(cred.Username) < 3 || len(cred.Password) < minLen {
+		http.Error(w, fmt.Sprintf("用户名至少3位，密码至少%d位", minLen), http.StatusBadRequest)
 		return
+	}
+	// 可选邮箱验证：register.verify_email = "1" 时要求先验证邮箱
+	if v, ok := model.KVGet("register.verify_email"); ok && v == "1" {
+		cred.Email = strings.TrimSpace(cred.Email)
+		cred.Code = strings.TrimSpace(cred.Code)
+		if cred.Email == "" {
+			authJSONError(w, http.StatusBadRequest, "邮箱必填")
+			return
+		}
+		if cred.Code == "" {
+			if model.GetSetting().SMTPHost == "" {
+				authJSONError(w, http.StatusBadRequest, "SMTP 未配置")
+				return
+			}
+			code, err := randomDigits(6)
+			if err != nil {
+				authJSONError(w, http.StatusInternalServerError, "生成验证码失败")
+				return
+			}
+			regCodesMu.Lock()
+			purgeRegCodesLocked()
+			regCodes[cred.Email] = regCodeEntry{code: code, expiry: time.Now().Add(10 * time.Minute)}
+			regCodesMu.Unlock()
+			if err := emailSend(cred.Email, "注册验证码", "您的注册验证码是: "+code+"\r\n\r\n该验证码10分钟内有效。"); err != nil {
+				authJSONError(w, http.StatusInternalServerError, "发送失败: "+err.Error())
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "need_code": true, "email": cred.Email})
+			return
+		}
+		regCodesMu.Lock()
+		purgeRegCodesLocked()
+		entry, ok := regCodes[cred.Email]
+		if ok {
+			delete(regCodes, cred.Email)
+		}
+		regCodesMu.Unlock()
+		if !ok || entry.code != cred.Code {
+			authJSONError(w, http.StatusBadRequest, "验证码错误")
+			return
+		}
 	}
 	// 仿 new-api：系统无任何用户时，首个注册用户自动成为 root 超级管理员
 	role := "user"
-	quota := int64(0)
+	quota := int64(100000)
+	if v, ok := model.KVGet("register.default_quota"); ok {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			quota = n
+		}
+	}
 	if model.CountUsers() == 0 {
 		role = "root"
 		quota = -1 // root 不限额度

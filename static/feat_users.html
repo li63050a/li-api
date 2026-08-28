@@ -11,7 +11,21 @@
 <div class="container">
   <div class="topbar">
     <h2>用户管理</h2>
-    <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-warning" onclick="toggleBatch()">批量创建</button>
+      <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
+    </div>
+  </div>
+
+  <div class="card" id="batchCard" style="display:none">
+    <h3>批量创建用户</h3>
+    <div class="form-group">
+      <textarea id="bNames" rows="4" placeholder="每行一个用户名"></textarea>
+      <input id="bPwd" type="password" placeholder="统一密码">
+      <input id="bQuota" type="number" placeholder="额度(token, -1 不限)" value="-1">
+      <button class="btn btn-success" onclick="batchCreate()">批量创建</button>
+      <span id="batchMsg" class="msg"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -47,6 +61,31 @@ async function addUser(){ const data={username:v('uName'),password:v('uPwd'),rol
   if(!res.ok){ alert('创建失败：'+(await res.text())); return; } loadUsers(); ['uName','uPwd'].forEach(i=>document.getElementById(i).value=''); }
 async function deleteUser(id){ if(!confirm('确认删除该用户？'))return; await api('/admin/users/'+id,{method:'DELETE'}); loadUsers(); }
 async function toggleUser(id,status){ await api('/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}); loadUsers(); }
+
+function toggleBatch(){
+  const c=document.getElementById('batchCard');
+  c.style.display=c.style.display==='none'?'':'none';
+}
+async function batchCreate(){
+  const msg=document.getElementById('batchMsg');
+  const names=document.getElementById('bNames').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const password=document.getElementById('bPwd').value;
+  if(!names.length){ msg.textContent='请输入至少一个用户名'; msg.style.color='var(--danger)'; return; }
+  if(!password){ msg.textContent='请填写统一密码'; msg.style.color='var(--danger)'; return; }
+  msg.textContent='创建中…'; msg.style.color='var(--fg-2)';
+  try{
+    const res=await api('/admin/users/batch',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({usernames:names,password:password,quota:parseInt(document.getElementById('bQuota').value,10)||-1})});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){ msg.textContent='创建失败：'+(d.error||d.message||res.status); msg.style.color='var(--danger)'; return; }
+    const failed=d.failed||[];
+    msg.innerHTML='创建成功 <b style="color:var(--success)">'+(d.created||0)+'</b> 个'+
+      (failed.length?'，失败 <b style="color:var(--danger)">'+failed.length+'</b> 个：'+failed.map(f=>escapeHtml(f.username)+'('+escapeHtml(f.error)+')').join('；'):'');
+    msg.style.color='var(--fg)';
+    document.getElementById('bNames').value='';
+    loadUsers();
+  }catch(e){ msg.textContent='请求出错'; msg.style.color='var(--danger)'; }
+}
 
 (async () => {
   try { await ensureAuth(); } catch (e) { return; }

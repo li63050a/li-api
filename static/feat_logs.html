@@ -58,7 +58,8 @@ function pretty(text) {
 
 async function loadLogs() {
   const body = $('logBody');
-  body.innerHTML = '<tr><td colspan="9" class="muted">加载中…</td></tr>';
+  loadState(body, '加载中…');
+  $('pager').innerHTML = '';
   const limit = Math.min(500, Math.max(1, parseInt(v('fLimit'), 10) || 50));
   const qs = new URLSearchParams({ page: logPage, limit: limit });
   const m = v('fModel').trim();
@@ -69,13 +70,13 @@ async function loadLogs() {
   if (g) qs.set('group', g);
   let d = {};
   try {
-    const r = await api('/api/logs?' + qs.toString());
-    if (!r.ok) { body.innerHTML = '<tr><td colspan="9" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    const r = await apiWithTimeout('/api/logs?' + qs.toString());
+    if (!r.ok) { emptyState(body, '获取失败'); return; }
     d = await r.json();
-  } catch (e) { body.innerHTML = '<tr><td colspan="9" class="msg">获取失败</td></tr>'; return; }
+  } catch (e) { emptyState(body, '获取失败'); return; }
   const logs = d.logs || [];
   if (logs.length === 0) {
-    body.innerHTML = '<tr><td colspan="9" class="muted">暂无日志</td></tr>';
+    emptyState(body, '暂无日志');
   } else {
     body.innerHTML = logs.map((l, i) => `
       <tr class="row-click" onclick="toggleDetail(${i})">
