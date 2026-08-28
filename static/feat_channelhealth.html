@@ -11,9 +11,12 @@
     <div class="panel">
       <div class="panel-head">
         <h2>渠道健康监控</h2>
-        <button class="btn" onclick="loadHealth()">刷新</button>
+        <div>
+          <button class="btn btn-success" id="batchBtn" onclick="batchTest()">批量测试</button>
+          <button class="btn" onclick="loadHealth()">刷新</button>
+        </div>
       </div>
-      <p class="muted">向每个渠道的 <code>/v1/models</code> 发起 3 秒超时探测，检测可达性与延迟。</p>
+      <p class="muted">向每个渠道的 <code>/v1/models</code> 发起 3 秒超时探测，检测可达性与延迟。批量测试将 POST <code>/admin/channels/test/batch</code>。</p>
 
       <table class="table">
         <thead>
@@ -31,11 +34,30 @@
           <tr><td colspan="7" class="muted">加载中…</td></tr>
         </tbody>
       </table>
+
+      <h3 style="margin-top:20px">批量测试结果</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>名称</th>
+            <th>状态</th>
+            <th>HTTP 状态</th>
+            <th>延迟(ms)</th>
+            <th>消息</th>
+          </tr>
+        </thead>
+        <tbody id="batchBody">
+          <tr><td colspan="6" class="muted">尚未执行批量测试</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
   <script src="/common.js"></script>
   <script>
+    let healthIds = [];
+
     async function loadHealth() {
       const tb = $('healthBody');
       tb.innerHTML = '<tr><td colspan="7" class="muted">加载中…</td></tr>';
@@ -47,6 +69,8 @@
         }
         const data = await r.json();
         const list = data.channels || [];
+        healthIds = list.map(c => c.id).filter(id => id != null);
+        $('batchBtn').disabled = healthIds.length === 0;
         if (list.length === 0) {
           tb.innerHTML = '<tr><td colspan="7" class="muted">暂无渠道</td></tr>';
           return;
@@ -68,6 +92,51 @@
         }).join('');
       } catch (e) {
         tb.innerHTML = '<tr><td colspan="7" class="muted">请求错误</td></tr>';
+      }
+    }
+
+    async function batchTest() {
+      const body = $('batchBody');
+      if (healthIds.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" class="msg">没有可测试的渠道 ID</td></tr>';
+        return;
+      }
+      body.innerHTML = '<tr><td colspan="6" class="muted">批量测试中…</td></tr>';
+      try {
+        const r = await api('/admin/channels/test/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: healthIds })
+        });
+        if (!r.ok) {
+          body.innerHTML = '<tr><td colspan="6" class="msg">批量测试失败（' + r.status + '）</td></tr>';
+          return;
+        }
+        const d = await r.json();
+        let results = Array.isArray(d) ? d : (d.results || d.items || []);
+        if (results.length === 0) {
+          body.innerHTML = '<tr><td colspan="6" class="msg">批量测试未返回结果</td></tr>';
+          return;
+        }
+        body.innerHTML = results.map(res => {
+          const ok = res.success === true || res.ok === true;
+          const badge = ok
+            ? '<span class="status status-on">成功</span>'
+            : '<span class="status status-off">失败</span>';
+          const http = res.http_status != null ? String(res.http_status) : (res.status_code != null ? String(res.status_code) : '—');
+          const lat = res.latency_ms != null ? res.latency_ms : '—';
+          const msg = res.message || res.error || (ok ? 'OK' : '—');
+          return `<tr>
+            <td>${res.id != null ? escapeHtml(String(res.id)) : '-'}</td>
+            <td>${escapeHtml(res.name || res.channel || '-')}</td>
+            <td>${badge}</td>
+            <td>${escapeHtml(http)}</td>
+            <td>${escapeHtml(String(lat))}</td>
+            <td>${escapeHtml(msg)}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        body.innerHTML = '<tr><td colspan="6" class="msg">批量测试请求出错</td></tr>';
       }
     }
 

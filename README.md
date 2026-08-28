@@ -1,9 +1,9 @@
 # API 中转站 (api-gateway)
 
-一个仿照 [new-api](https://github.com/Calcium-Ion/new-api) 思路、但**极简、轻量**的 API / LLM 中转网关。
+一个**极简、轻量**的 API / LLM 中转网关。
 
 - **纯 Go 实现**，无 CGO，交叉编译零依赖
-- **极小体积**：编译产物仅约 3MB（new-api 动辄数十 MB）
+- **极小体积**：编译产物仅约 3MB
 - **极低内存**：常驻内存约 10MB 级别，无外部数据库进程
 - **单文件运行**：一个二进制 + 一份 SQLite 数据文件（`data/gateway.db`）即可工作
 - 支持反向代理、上游认证注入、限流、路径白名单、SSE 流式转发
@@ -13,9 +13,9 @@
 
 ---
 
-## 核心概念（仿 new-api）
+## 核心概念
 
-本网关按 new-api 的思路组织，而非简单前缀转发：
+本网关按「渠道 + 令牌 + 分组」的模型路由思路组织，而非简单前缀转发：
 
 - **渠道 Channel**：一个上游服务实例（如某个 OpenAI / Anthropic 账号）。含 `base_url`、多个上游密钥（轮询+故障转移）、支持的 `models`、所属 `group`、优先级/权重、限流。
 - **令牌 Token**：面向用户的访问凭证。绑定到某个 `group`，按 `quota`（token 额度）计费；请求需携带 `Authorization: Bearer <token>`。
@@ -254,17 +254,14 @@ curl https://你的网关/v1/chat/completions \
 
 ## 配置文件 `config.json`
 
-首次启动若文件不存在会自动创建（默认 `data` 目录，可用 `DATA_DIR` 或 `-c` 指定）。示例：
+首次启动若文件不存在会自动创建。**配置文件只负责网络层**（监听地址、TLS 证书）；营业模式、开放注册、模型倍率等业务设置一律在运行时通过 `/api/setting` 管理并存入 SQLite，不写在配置文件里。示例：
 
 ```json
 {
   "listen": ":8090",
   "data_dir": "data",
-  "setting": {
-    "mode": "self",
-    "open_register": true,
-    "model_ratio": {}
-  }
+  "tls_cert": "",
+  "tls_key": ""
 }
 ```
 
@@ -272,9 +269,8 @@ curl https://你的网关/v1/chat/completions \
 | --- | --- |
 | `listen` | 监听地址，默认 `:8090` |
 | `data_dir` | 数据目录（SQLite 存放处），默认 `data`；可通过环境变量 `DATA_DIR` 覆盖 |
-| `setting.mode` | `self` 自用 / `biz` 营业 |
-| `setting.open_register` | 是否允许公开注册 |
-| `setting.model_ratio` | 模型倍率表（营业计费用） |
+| `tls_cert` | 可选：TLS 证书路径（与 `tls_key` 同时设置则启用 HTTPS） |
+| `tls_key` | 可选：TLS 私钥路径 |
 
 数据均落在 `data_dir` 下的 `gateway.db`（SQLite 关系型存储，纯 Go 无 CGO；旧版 JSON 首次启动自动迁移为 `*.json.bak`）。
 

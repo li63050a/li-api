@@ -17,6 +17,11 @@
       </div>
     </div>
     <div class="card">
+      <div class="form-group">
+        <input id="q" placeholder="搜索：操作者 / 动作 / 详情" style="flex:1 1 260px">
+        <button class="btn btn-primary" onclick="doSearch()">搜索</button>
+        <button class="btn btn-dark" onclick="clearSearch()">清除</button>
+      </div>
       <div class="msg" id="msg"></div>
       <table>
         <thead>
@@ -60,13 +65,22 @@
     })();
 
     async function load() {
-      const r = await api('/api/feat/audit');
+      const q = v('q').trim();
+      const url = q ? '/api/feat/audit?q=' + encodeURIComponent(q) : '/api/feat/audit';
+      const r = await api(url);
       if (!r.ok) {
         $('tbody').innerHTML = '<tr><td colspan="4">加载失败：' + r.status + '</td></tr>';
         return;
       }
       const data = await r.json();
-      const audits = data.audits || [];
+      let audits = data.audits || [];
+      if (q) {
+        const k = q.toLowerCase();
+        audits = audits.filter(a =>
+          String(a.actor || '').toLowerCase().indexOf(k) !== -1 ||
+          String(a.action || '').toLowerCase().indexOf(k) !== -1 ||
+          String(a.detail || '').toLowerCase().indexOf(k) !== -1);
+      }
       if (audits.length === 0) {
         $('tbody').innerHTML = '<tr><td colspan="4">暂无记录</td></tr>';
         return;
@@ -80,6 +94,9 @@
           '</tr>';
       }).join('');
     }
+
+    function doSearch() { load(); }
+    function clearSearch() { $('q').value = ''; load(); }
   </script>
 </body>
 </html>

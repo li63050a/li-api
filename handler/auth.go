@@ -83,6 +83,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if u, ok := model.VerifyUser(cred.Username, cred.Password); ok {
 		authLoginReset(cred.Username)
+		recordLoginIP(cred.Username, clientIP(r))
 		// 已启用 2FA 的用户：先不签发会话，返回 need_2fa，待 TOTP 校验后发会话
 		if u.TwoFAEnabled == 1 {
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -257,4 +258,64 @@ func bearerToken(r *http.Request) string {
 		return strings.TrimSpace(strings.TrimPrefix(ah, "Bearer "))
 	}
 	return r.Header.Get("X-Admin-Token")
+}
+
+func init() {
+	http.HandleFunc("/api/user/iplog", IpLogHandler)
+}
+
+// recordLoginIP 登录成功后把本次登录 IP 追加到 KV "iplog.<username>"（最多保留最近 50 条）
+func recordLoginIP(username, ip string) {
+	key := "iplog." + username
+	var entries []map[string]interface{}
+	if raw, ok := model.KVGet(key); ok && raw != "" {
+		_ = json.Unmarshal([]byte(raw), &entries)
+	}
+	entries = append(entries, map[string]interface{}{
+		"time": time.Now().Format(time.RFC3339),
+		"ip":   ip,
+	})
+	if len(entries) > 50 {
+		entries = entries[len(entries)-50:]
+	}
+	if b, err := json.Marshal(entries); err == nil {
+		_ = model.KVSet(key, string(b))
+	}
+}
+
+// IpLogHandler GET /api/user/iplog 返回当前用户的登录 IP 记录；root 可通过 ?user= 查询指定用户
+func IpLogHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s, ok := requireSession(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	target := s.Username
+	if u := r.URL.Query().Get("user"); u != "" {
+		if !model.IsRoot(s.Username) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		target = u
+	}
+	var entries []map[string]interface{}
+	if raw, ok := model.KVGet("iplog." + target); ok && raw != "" {
+		_ = json.Unmarshal([]byte(raw), &entries)
+	}
+	if entries == nil {
+		entries = []map[string]interface{}{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"iplog": entries})
 }

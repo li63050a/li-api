@@ -19,7 +19,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（按 0.0.x 依次递增）
-const Version = "0.0.1.0"
+const Version = "0.0.1.1"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -88,50 +88,71 @@ func main() {
 	staticSub, _ := fs.Sub(staticFS, "static")
 	http.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	// 账户 / 会话
-	http.HandleFunc("/api/user/login", handler.LoginHandler)
-	http.HandleFunc("/api/user/register", handler.RegisterHandler)
-	http.HandleFunc("/api/user/logout", handler.LogoutHandler)
-	http.HandleFunc("/api/user/self", handler.SelfHandler)
-	http.HandleFunc("/api/setting", handler.SettingHandler)
-	http.HandleFunc("/api/dashboard", handler.DashboardHandler)
-	http.HandleFunc("/api/model_presets", handler.ModelPresetsHandler)
-	http.HandleFunc("/api/redemption/redeem", handler.RedeemHandler)
-	http.HandleFunc("/api/logs", handler.LogsHandler)
-	http.HandleFunc("/api/setting/test_email", handler.TestEmailHandler)
+	// 账户 / 会话（挂安全响应头 + CSRF 校验）
+	http.HandleFunc("/api/user/login", handler.SecurityHeaders(handler.CSRFCheck(handler.LoginHandler)))
+	http.HandleFunc("/api/user/register", handler.SecurityHeaders(handler.CSRFCheck(handler.RegisterHandler)))
+	http.HandleFunc("/api/user/logout", handler.SecurityHeaders(handler.CSRFCheck(handler.LogoutHandler)))
+	http.HandleFunc("/api/user/self", handler.SecurityHeaders(handler.CSRFCheck(handler.SelfHandler)))
+	http.HandleFunc("/api/setting", handler.SecurityHeaders(handler.CSRFCheck(handler.SettingHandler)))
+	http.HandleFunc("/api/dashboard", handler.SecurityHeaders(handler.CSRFCheck(handler.DashboardHandler)))
+	http.HandleFunc("/api/model_presets", handler.SecurityHeaders(handler.CSRFCheck(handler.ModelPresetsHandler)))
+	http.HandleFunc("/api/redemption/redeem", handler.SecurityHeaders(handler.CSRFCheck(handler.RedeemHandler)))
+	http.HandleFunc("/api/logs", handler.SecurityHeaders(handler.CSRFCheck(handler.LogsHandler)))
+	http.HandleFunc("/api/setting/test_email", handler.SecurityHeaders(handler.CSRFCheck(handler.TestEmailHandler)))
 
-	// 管理 API（挂维护模式 + 安全守卫）
-	http.HandleFunc("/admin/routes", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.AdminHandler)))
-	http.HandleFunc("/admin/routes/", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.AdminHandler)))
-	http.HandleFunc("/admin/tokens", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.TokenHandler)))
-	http.HandleFunc("/admin/tokens/", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.TokenHandler)))
-	http.HandleFunc("/admin/channels", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.ChannelHandler)))
-	http.HandleFunc("/admin/channels/", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.ChannelHandler)))
-	http.HandleFunc("/admin/channels/test/", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.ChannelTestHandler)))
-	http.HandleFunc("/admin/users", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.UsersHandler)))
-	http.HandleFunc("/admin/users/", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.UsersHandler)))
-	http.HandleFunc("/admin/redemptions", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedemptionHandler)))
-	http.HandleFunc("/admin/redemptions/", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedemptionHandler)))
-	http.HandleFunc("/admin/model_redirects", handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedirectHandler)))
+	// 管理 API（挂安全响应头 + CSRF 校验 + 维护模式 + 安全守卫）
+	http.HandleFunc("/admin/routes", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.AdminHandler)))))
+	http.HandleFunc("/admin/routes/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.AdminHandler)))))
+	http.HandleFunc("/admin/tokens", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.TokenHandler)))))
+	http.HandleFunc("/admin/tokens/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.TokenHandler)))))
+	http.HandleFunc("/admin/channels", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.ChannelHandler)))))
+	http.HandleFunc("/admin/channels/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.ChannelHandler)))))
+	http.HandleFunc("/admin/channels/test/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.ChannelTestHandler)))))
+	http.HandleFunc("/admin/users", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.UsersHandler)))))
+	http.HandleFunc("/admin/users/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.UsersHandler)))))
+	http.HandleFunc("/admin/redemptions", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedemptionHandler)))))
+	http.HandleFunc("/admin/redemptions/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedemptionHandler)))))
+	http.HandleFunc("/admin/model_redirects", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedirectHandler)))))
 
-	// 仿 new-api 的模型路由转发（OpenAI 兼容 /v1/*，挂维护模式 + 敏感词审查 + 安全守卫）
-	http.HandleFunc("/v1/", handler.MaintenanceMiddleware(handler.SensitiveMiddleware(handler.GuardMiddleware(handler.RelayHandler))))
+	// 模型路由转发（OpenAI 兼容 /v1/*，挂安全响应头 + 请求计数 + 维护模式 + 敏感词审查 + 安全守卫）
+	http.HandleFunc("/v1/", handler.SecurityHeaders(handler.CountMiddleware(handler.MaintenanceMiddleware(handler.SensitiveMiddleware(handler.GuardMiddleware(handler.RelayHandler))))))
 
-	// 启动服务（优雅停机）
+	// 启动服务（支持 HTTPS / 优雅停机 / SIGHUP 热重载缓存）
 	listen := os.Getenv("LISTEN")
 	if listen == "" {
 		listen = cfg.Listen
 	}
 	srv := &http.Server{Addr: listen, Handler: nil}
 	go func() {
+		if cfg.SSLEnabled {
+			if cfg.SSLCert == "" || cfg.SSLKey == "" {
+				log.Fatal("ssl_enabled=true 但 ssl_cert / ssl_key 未配置")
+			}
+			log.Println("🚀 API Gateway started on https://" + listen)
+			if err := srv.ListenAndServeTLS(cfg.SSLCert, cfg.SSLKey); err != nil && err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+			return
+		}
 		log.Println("🚀 API Gateway started on http://" + listen)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	for s := range sig {
+		if s == syscall.SIGHUP {
+			log.Println("SIGHUP: 热重载缓存 ...")
+			if err := cache.Refresh(); err != nil {
+				log.Println("reload error:", err)
+			} else {
+				log.Println("reload done")
+			}
+			continue
+		}
+		break
+	}
 	log.Println("shutting down ...")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

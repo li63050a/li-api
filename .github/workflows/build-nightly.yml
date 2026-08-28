@@ -1,0 +1,52 @@
+name: 自动编译并更新 Nightly 发布
+
+# 触发条件：任何 push 到任何分支，以及手动触发
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    # 关键权限：允许创建/更新 Release
+    permissions:
+      contents: write
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'   # 匹配 go.mod 的 go 1.25.0
+
+      - name: 执行交叉编译脚本
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      # （可选）保留为 Actions 的临时产物，方便调试
+      - name: 上传到 Actions 临时产物（可选）
+        uses: actions/upload-artifact@v4
+        with:
+          name: 所有平台的二进制文件
+          path: build/
+
+      # 核心步骤：更新名为 nightly 的预发布版
+      - name: 创建或更新 Nightly Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: nightly                 # 固定标签
+          name: "每日构建版 (Nightly)"
+          body: |
+            自动构建于 commit: ${{ github.sha }}
+            触发分支: ${{ github.ref_name }}
+            构建时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          draft: false                 # 不存为草稿
+          prerelease: true             # 标记为预发布版
+          allowUpdates: true           # 允许更新已有的 Release
+          removeArtifacts: true        # 上传前清空旧附件，避免残留
+          artifacts: "build/*"         # 上传 build/ 下所有文件
+          token: ${{ secrets.GITHUB_TOKEN }}

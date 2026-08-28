@@ -4,8 +4,11 @@ import (
 	"api-gateway/model"
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
+	"mime"
 	"net/http"
+	"net/smtp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +62,7 @@ func runDailyTasksIfDue() {
 	subDailyGrant()
 	channelHealthPing()
 	statsSnapshot()
+	tokenExpiryReminder()
 	runMonthlyTaskIfDue()
 }
 
@@ -208,4 +212,63 @@ func statsSnapshot() {
 		return
 	}
 	_ = model.KVSet("snapshot.daily", string(b))
+}
+
+// tokenExpiryReminder 令牌到期提醒：对 3 天内过期且尚未提醒过的令牌，向归属用户发邮件
+func tokenExpiryReminder() {
+	tokens, err := model.GetAllTokens()
+	if err != nil {
+		log.Printf("scheduler: load tokens: %v", err)
+		return
+	}
+	cfg := model.GetSetting()
+	if cfg.SMTPHost == "" {
+		return
+	}
+	now := time.Now()
+	deadline := now.Add(3 * 24 * time.Hour)
+	for _, t := range tokens {
+		if t.ExpiredAt.IsZero() || !now.Before(t.ExpiredAt) || !t.ExpiredAt.Before(deadline) {
+			continue
+		}
+		if _, ok := model.KVGet("reminded." + t.Key); ok {
+			continue
+		}
+		u, found := model.GetUserByUsername(t.Owner)
+		if !found || u.Email == "" {
+			continue
+		}
+		body := "Your token " + t.Name + " (" + t.Key + ") expires at " + t.ExpiredAt.Format(time.RFC3339) + ".\r\n\r\nPlease renew it before expiration."
+		if err := schedulerSendMail(cfg, u.Email, "Token "+t.Name+" expires soon", body); err != nil {
+			log.Printf("scheduler: token expiry reminder for %q failed: %v", t.Key, err)
+			continue
+		}
+		_ = model.KVSet("reminded."+t.Key, "1")
+	}
+}
+
+// schedulerSendMail 通过全局 SMTP 配置发送邮件（SMTPUser 为空时不使用认证）
+func schedulerSendMail(cfg model.Setting, to, subject, body string) error {
+	if cfg.SMTPHost == "" {
+		return fmt.Errorf("smtp not configured")
+	}
+	port := cfg.SMTPPort
+	if port == 0 {
+		port = 25
+	}
+	from := cfg.SMTPFrom
+	if from == "" {
+		from = cfg.SMTPUser
+	}
+	if from == "" {
+		from = to
+	}
+	var auth smtp.Auth
+	if cfg.SMTPUser != "" {
+		auth = smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPHost)
+	}
+	addr := fmt.Sprintf("%s:%d", cfg.SMTPHost, port)
+	subj := mime.QEncoding.Encode("UTF-8", subject)
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s", from, to, subj, body)
+	return smtp.SendMail(addr, auth, from, []string{to}, []byte(msg))
 }

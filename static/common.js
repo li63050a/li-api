@@ -22,6 +22,13 @@ async function ensureAuth() {
     return r.json();
 }
 
+// 主题同步：与 index.html 的暗色切换共用 localStorage 键 gw_theme
+(function () {
+    if (localStorage.getItem('gw_theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+    }
+})();
+
 function $(id) { return document.getElementById(id); }
 function v(id) { return document.getElementById(id).value; }
 function fmtTime(s) {

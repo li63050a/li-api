@@ -24,14 +24,24 @@
     </div>
   </div>
 
+  <div class="form-group">
+    <input id="fModel" placeholder="模型 model" style="flex:1 1 140px">
+    <input id="fStatus" placeholder="状态码 status" style="flex:1 1 100px">
+    <input id="fGroup" placeholder="分组 group" style="flex:1 1 120px">
+    <input id="fLimit" type="number" placeholder="每页 limit" value="50" min="1" max="500" style="flex:1 1 90px">
+    <button class="btn btn-primary" onclick="doSearch()">查询</button>
+  </div>
+
   <table>
-    <thead><tr><th>时间</th><th>方法</th><th>路径</th><th>模型</th><th>令牌</th><th>状态</th><th>成本</th><th>耗时(ms)</th></tr></thead>
-    <tbody id="logBody"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody>
+    <thead><tr><th>时间</th><th>方法</th><th>路径</th><th>模型</th><th>分组</th><th>令牌</th><th>状态</th><th>成本</th><th>耗时(ms)</th></tr></thead>
+    <tbody id="logBody"><tr><td colspan="9" class="muted">加载中…</td></tr></tbody>
   </table>
 </div>
 
 <script>
 let logPage = 1;
+
+function doSearch() { logPage = 1; loadLogs(); }
 
 function statusBadge(s) {
   const n = parseInt(s, 10);
@@ -52,17 +62,24 @@ function pretty(text) {
 
 async function loadLogs() {
   const body = $('logBody');
-  body.innerHTML = '<tr><td colspan="8" class="muted">加载中…</td></tr>';
-  const qs = new URLSearchParams({ page: logPage, limit: 50 });
+  body.innerHTML = '<tr><td colspan="9" class="muted">加载中…</td></tr>';
+  const limit = Math.min(500, Math.max(1, parseInt(v('fLimit'), 10) || 50));
+  const qs = new URLSearchParams({ page: logPage, limit: limit });
+  const m = v('fModel').trim();
+  if (m) qs.set('model', m);
+  const st = v('fStatus').trim();
+  if (st) qs.set('status', st);
+  const g = v('fGroup').trim();
+  if (g) qs.set('group', g);
   let d = {};
   try {
     const r = await api('/api/logs?' + qs.toString());
-    if (!r.ok) { body.innerHTML = '<tr><td colspan="8" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="9" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
     d = await r.json();
-  } catch (e) { body.innerHTML = '<tr><td colspan="8" class="msg">获取失败</td></tr>'; return; }
+  } catch (e) { body.innerHTML = '<tr><td colspan="9" class="msg">获取失败</td></tr>'; return; }
   const logs = d.logs || [];
   if (logs.length === 0) {
-    body.innerHTML = '<tr><td colspan="8" class="muted">暂无日志</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="muted">暂无日志</td></tr>';
   } else {
     body.innerHTML = logs.map((l, i) => `
       <tr class="row-click" onclick="toggleDetail(${i})">
@@ -70,19 +87,20 @@ async function loadLogs() {
         <td>${escapeHtml(l.method || '')}</td>
         <td style="max-width:220px;word-break:break-all">${escapeHtml(l.path || '')}</td>
         <td>${escapeHtml(l.model || '')}</td>
+        <td>${escapeHtml(l.group || '')}</td>
         <td><code>${escapeHtml(maskTok(l.token))}</code></td>
         <td>${statusBadge(l.status)}</td>
         <td>${escapeHtml(String(l.cost || 0))}</td>
         <td>${escapeHtml(String(l.duration || 0))}</td>
       </tr>
-      <tr id="det${i}" style="display:none"><td colspan="8" style="background:#f9fafc">
+      <tr id="det${i}" style="display:none"><td colspan="9" style="background:var(--th-bg)">
         <div class="small">请求预览</div>
         <div class="preview">${escapeHtml(pretty(l.req_preview))}</div>
         <div class="small" style="margin-top:8px">响应预览</div>
         <div class="preview">${escapeHtml(pretty(l.resp_preview))}</div>
       </td></tr>`).join('');
   }
-  const pages = Math.max(1, Math.ceil((d.total || 0) / (d.limit || 50)));
+  const pages = Math.max(1, Math.ceil((d.total || 0) / (d.limit || limit)));
   $('pager').innerHTML = '第' + (d.page || 1) + '/' + pages + '页 共' + (d.total || 0) + '条 ' +
     '<button class="btn btn-dark" onclick="logPage=Math.max(1,logPage-1);loadLogs()">上一页</button> ' +
     '<button class="btn btn-dark" onclick="logPage=Math.min(' + pages + ',logPage+1);loadLogs()">下一页</button>';

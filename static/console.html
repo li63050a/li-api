@@ -46,6 +46,14 @@
   </div>
 
   <div class="card">
+    <h3>IP 历史</h3>
+    <table>
+      <thead><tr><th>时间</th><th>IP</th></tr></thead>
+      <tbody id="ipBody"><tr><td colspan="2" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <h3>我的令牌</h3>
     <div class="form-group">
       <input id="tkName" placeholder="名称/备注">
@@ -127,6 +135,7 @@ async function loadAll() {
   } catch (e) { return; }
   $('tfUser').value = selfUser;
   await loadUsage();
+  await loadIplog();
   await loadTokens();
   await loadPlans();
   await loadSessions();
@@ -233,6 +242,23 @@ function drawTrend(list) {
       ctx.fillText(it.label.slice(0, 10), x, padT + ph + 4);
     }
   });
+}
+
+async function loadIplog() {
+  const body = $('ipBody');
+  body.innerHTML = '<tr><td colspan="2" class="muted">加载中…</td></tr>';
+  let list = [];
+  try {
+    const r = await api('/api/user/iplog');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="2" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    list = Array.isArray(d) ? d : (d.logs || d.iplog || d.items || []);
+  } catch (e) { body.innerHTML = '<tr><td colspan="2" class="msg">获取失败</td></tr>'; return; }
+  if (list.length === 0) { body.innerHTML = '<tr><td colspan="2" class="muted">暂无登录记录</td></tr>'; return; }
+  body.innerHTML = list.map(x => `<tr>
+    <td style="white-space:nowrap">${escapeHtml(fmtTime(x.time || x.created_at || x.login_time))}</td>
+    <td><code>${escapeHtml(x.ip || x.address || '-')}</code></td>
+  </tr>`).join('');
 }
 
 async function loadTokens() {

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>团队管理</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>团队管理</h2>
+    <button class="btn btn-primary" onclick="loadTeam()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>创建成员</h3>
+    <div class="form-group">
+      <input id="mUser" placeholder="用户名 username">
+      <input id="mPwd" type="password" placeholder="密码 password">
+      <input id="mParent" placeholder="上级用户名 parent">
+      <button class="btn btn-success" onclick="createMember()">创建</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>用户名</th><th>上级</th><th>额度</th><th>已用</th><th>状态</th></tr></thead>
+    <tbody id="teamBody"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+function badgeStatus(s) {
+  const on = String(s) === '1' || s === true || String(s).toLowerCase() === 'on' || String(s).toLowerCase() === 'active';
+  if (String(s).toLowerCase() === 'disabled' || String(s).toLowerCase() === 'off') {
+    return '<span class="status status-off">禁用</span>';
+  }
+  return on ? '<span class="status status-on">启用</span>' : '<span class="status status-off">禁用</span>';
+}
+
+async function loadTeam() {
+  const body = $('teamBody');
+  body.innerHTML = '<tr><td colspan="5" class="muted">加载中…</td></tr>';
+  let list = [];
+  try {
+    const r = await api('/admin/team');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="5" class="msg">获取失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    list = Array.isArray(d) ? d : (d.members || d.teams || []);
+  } catch (e) { body.innerHTML = '<tr><td colspan="5" class="msg">获取失败</td></tr>'; return; }
+  if (list.length === 0) { body.innerHTML = '<tr><td colspan="5" class="muted">暂无成员</td></tr>'; return; }
+  body.innerHTML = list.map(m => `<tr>
+    <td>${escapeHtml(m.username || m.name || '-')}</td>
+    <td>${escapeHtml(m.parent || '-')}</td>
+    <td>${m.quota == null ? '-' : escapeHtml(String(m.quota))}</td>
+    <td>${m.used == null ? '-' : escapeHtml(String(m.used))}</td>
+    <td>${badgeStatus(m.status)}</td>
+  </tr>`).join('');
+}
+
+async function createMember() {
+  const msg = $('msg');
+  msg.textContent = '';
+  const username = v('mUser').trim();
+  const password = v('mPwd');
+  if (!username || !password) { msg.textContent = '请填写用户名和密码'; return; }
+  const data = { username: username, password: password };
+  const parent = v('mParent').trim();
+  if (parent) data.parent = parent;
+  try {
+    const r = await api('/admin/team/member', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = '创建失败：' + (d.error || d.message || r.status); return; }
+    msg.style.color = '#38a169';
+    msg.textContent = '已创建成员 ' + username;
+    $('mUser').value = '';
+    $('mPwd').value = '';
+    $('mParent').value = '';
+    loadTeam();
+  } catch (e) { msg.textContent = '创建失败'; }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadTeam();
+})();
+</script>
+</body>
+</html>

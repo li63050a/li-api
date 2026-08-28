@@ -5,30 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API 网关管理</title>
     <style>
-        body { font-family: sans-serif; background: #f5f7fa; margin: 0; padding: 20px; }
+        :root {
+            --bg: #f5f7fa; --fg: #2d3748; --card-bg: #ffffff; --panel-bg: #ffffff;
+            --border: #cbd5e0; --row-border: #eaeef2; --th-bg: #f9fafc;
+            --accent: #2b6cb0; --tab-bg: #e2e8f0; --code-bg: #f1f5f9;
+            --status-on-bg: #c6f6d5; --status-on-fg: #22543d;
+            --status-off-bg: #fed7d7; --status-off-fg: #9b2c2c;
+            --muted: #718096;
+        }
+        html.dark {
+            --bg: #111827; --fg: #e2e8f0; --card-bg: #1f2937; --panel-bg: #1f2937;
+            --border: #4b5563; --row-border: #374151; --th-bg: #161d2b;
+            --accent: #63b3ed; --tab-bg: #374151; --code-bg: #0f172a;
+            --status-on-bg: #22543d; --status-on-fg: #c6f6d5;
+            --status-off-bg: #7f1d1d; --status-off-fg: #fed7d7;
+            --muted: #9ca3af;
+        }
+        body { font-family: sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 20px; }
         .container { max-width: 1200px; margin: auto; }
-        .card { background:#fff; padding:24px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.05); max-width:360px; margin:80px auto; }
-        .card input { width:100%; padding:10px 12px; border:1px solid #cbd5e0; border-radius:6px; margin-bottom:12px; box-sizing:border-box; }
+        .card { background: var(--card-bg); padding:24px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.05); max-width:360px; margin:80px auto; }
+        .card input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; box-sizing:border-box; background: var(--card-bg); color: var(--fg); }
         .card button { width:48%; padding:10px; border:none; border-radius:6px; cursor:pointer; color:#fff; }
         .tabs { margin-bottom: 16px; }
-        .tabs button { padding: 8px 18px; border: none; background: #e2e8f0; cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; }
-        .tabs button.active { background: #2b6cb0; color: #fff; }
-        .panel { display: none; background: #fff; padding: 16px; border-radius: 0 8px 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .tabs button { padding: 8px 18px; border: none; background: var(--tab-bg); color: var(--fg); cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; }
+        .tabs button.active { background: var(--accent); color: #fff; }
+        .panel { display: none; background: var(--panel-bg); padding: 16px; border-radius: 0 8px 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .panel.active { display: block; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-top: 12px; }
-        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #eaeef2; }
-        th { background: #f9fafc; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; background: var(--panel-bg); border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-top: 12px; }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--row-border); }
+        th { background: var(--th-bg); font-weight: 600; }
         .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
         .btn-primary { background: #2b6cb0; color: white; }
         .btn-danger { background: #e53e3e; color: white; }
         .btn-success { background: #38a169; color: white; }
         .btn-dark { background: #4a5568; color: white; }
         .form-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
-        .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 4px; flex: 1 1 150px; }
+        .form-group input, .form-group select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; flex: 1 1 150px; background: var(--panel-bg); color: var(--fg); }
         .status { font-size: 12px; padding: 2px 8px; border-radius: 12px; }
-        .status-on { background: #c6f6d5; color: #22543d; }
-        .status-off { background: #fed7d7; color: #9b2c2c; }
-        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+        .status-on { background: var(--status-on-bg); color: var(--status-on-fg); }
+        .status-off { background: var(--status-off-bg); color: var(--status-off-fg); }
+        code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; }
         .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
     </style>
 </head>
@@ -50,7 +66,10 @@
     <div id="app" style="display:none">
         <div class="topbar">
             <strong id="who"></strong>
-            <button class="btn btn-dark" onclick="logout()">退出</button>
+            <div>
+                <button class="btn btn-dark" onclick="toggleTheme()" id="themeBtn">🌙</button>
+                <button class="btn btn-dark" onclick="logout()">退出</button>
+            </div>
         </div>
         <div class="tabs">
             <button class="active" onclick="showTab('routes')">路由(旧)</button>
@@ -221,6 +240,9 @@
                 <button onclick="loadExt('console')">个人中心</button>
                 <button onclick="loadExt('feat_groups')">分组管理</button>
                 <button onclick="loadExt('feat_logs')">请求日志</button>
+                <button onclick="loadExt('feat_team')">团队管理</button>
+                <button onclick="loadExt('feat_testchat')">模型测试</button>
+                <button onclick="loadExt('feat_invoice')">发票管理</button>
                 <button onclick="loadExt('feat_cost')">费用明细</button>
             </div>
             <iframe id="extFrame" style="width:100%;height:680px;border:0;background:#fff;border-radius:0 8px 8px 8px"></iframe>
@@ -266,6 +288,16 @@
         loadRoutes();
     }
     if(getToken()) enterApp();
+
+    function toggleTheme(){
+        const dark = document.documentElement.classList.toggle('dark');
+        localStorage.setItem('gw_theme', dark ? 'dark' : 'light');
+        document.getElementById('themeBtn').textContent = dark ? '☀' : '🌙';
+    }
+    if(localStorage.getItem('gw_theme') === 'dark'){
+        document.documentElement.classList.add('dark');
+        document.getElementById('themeBtn').textContent = '☀';
+    }
 
     function showTab(id){
         document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));

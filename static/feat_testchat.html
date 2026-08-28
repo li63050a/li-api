@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>模型测试</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+  <style>
+    .resp { font-family: monospace; font-size: 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; white-space: pre-wrap; word-break: break-all; max-height: 480px; overflow: auto; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>模型测试</h2>
+    <button class="btn btn-primary" onclick="sendChat()">发送</button>
+  </div>
+
+  <div class="card">
+    <div class="form-group">
+      <input id="model" placeholder="模型名称 model">
+    </div>
+    <div class="form-group">
+      <textarea id="messages" rows="6" placeholder="消息内容，每行一条 user 消息"></textarea>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="sendChat()">发送</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>响应</h3>
+    <div class="resp" id="resp">尚未发送请求。</div>
+  </div>
+</div>
+
+<script>
+async function sendChat() {
+  const msg = $('msg');
+  const resp = $('resp');
+  msg.textContent = '';
+  const model = v('model').trim();
+  if (!model) { msg.textContent = '请填写模型名称'; return; }
+  const text = v('messages');
+  const messages = text.split('\n').map(s => s.trim()).filter(Boolean)
+    .map(content => ({ role: 'user', content: content }));
+  if (messages.length === 0) { msg.textContent = '请输入至少一条消息'; return; }
+  resp.textContent = '请求中…';
+  try {
+    const r = await api('/api/test_chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: model, messages: messages })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      resp.textContent = JSON.stringify({ error: d.error || d.message || ('HTTP ' + r.status) }, null, 2);
+      msg.textContent = '请求失败（' + r.status + '）';
+      return;
+    }
+    resp.textContent = JSON.stringify(d, null, 2);
+  } catch (e) {
+    resp.textContent = '请求出错：' + e;
+    msg.textContent = '请求出错';
+  }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+})();
+</script>
+</body>
+</html>

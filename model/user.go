@@ -271,6 +271,35 @@ func GetUserByUsername(name string) (*User, bool) {
 	return nil, false
 }
 
+// GetUsersByParent 返回指定 parent 下的全部用户（脱敏：不含密码哈希与 2FA 密钥）
+func GetUsersByParent(parent string) []User {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	var out []User
+	for i := range users {
+		if users[i].Parent == parent {
+			u := users[i]
+			u.PasswordHash = ""
+			u.TwoFASecret = ""
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// SetUserParent 设置用户所属父账户（团队关系）
+func SetUserParent(username, parent string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	for i := range users {
+		if users[i].Username == username {
+			users[i].Parent = parent
+			return saveUsers()
+		}
+	}
+	return errors.New("user not found")
+}
+
 // UpdateUser 更新用户资料（角色 / 状态 / 额度 / 密码）
 func UpdateUser(id int, patch User) error {
 	userMu.Lock()
