@@ -54,6 +54,19 @@
       <span id="msg" class="msg"></span>
     </div>
   </div>
+
+  <div class="card">
+    <h3>触发项配置</h3>
+    <div class="form-group">
+      <label><input type="checkbox" id="ntOnRegister"> 用户注册时通知</label>
+      <label><input type="checkbox" id="ntOnBigSpend"> 大额消费时通知</label>
+      <div class="field">
+        <label>大额消费阈值（额度，0=不启用）</label>
+        <input id="ntBigSpend" type="number" value="0">
+      </div>
+    </div>
+    <p class="hint">保存设置会一并保存下方触发项配置。</p>
+  </div>
 </div>
 
 <script>
@@ -74,6 +87,9 @@ async function loadNotify() {
   $('ntDingtalk').value = d.dingtalk_webhook || '';
   $('ntFeishu').value = d.feishu_webhook || '';
   $('ntEmail').value = d.email_to || '';
+  $('ntOnRegister').checked = !!d.on_register;
+  $('ntOnBigSpend').checked = !!d.on_big_spend;
+  $('ntBigSpend').value = d.big_spend_threshold || 0;
 }
 
 async function saveNotify() {
@@ -83,7 +99,10 @@ async function saveNotify() {
     telegram_chat_id: v('ntTgChat').trim(),
     dingtalk_webhook: v('ntDingtalk').trim(),
     feishu_webhook: v('ntFeishu').trim(),
-    email_to: v('ntEmail').trim()
+    email_to: v('ntEmail').trim(),
+    on_register: $('ntOnRegister').checked,
+    on_big_spend: $('ntOnBigSpend').checked,
+    big_spend_threshold: parseInt(v('ntBigSpend'), 10) || 0
   };
   const r = await api('/api/setting/notify', {
     method: 'POST',

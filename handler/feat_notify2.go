@@ -4,6 +4,7 @@ import (
 	"api-gateway/model"
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 func init() {
@@ -38,6 +39,13 @@ func NotifySettingsHandler(w http.ResponseWriter, r *http.Request) {
 		dingtalk, _ := model.KVGet("notify.dingtalk_webhook")
 		feishu, _ := model.KVGet("notify.feishu_webhook")
 		emailTo, _ := model.KVGet("notify.email_to")
+		onRegister, _ := model.KVGet("notify.on_register")
+		onBigSpend, _ := model.KVGet("notify.on_big_spend")
+		threshold, _ := model.KVGet("notify.big_spend_threshold")
+		bigSpendThreshold := 0
+		if n, err := strconv.Atoi(threshold); err == nil {
+			bigSpendThreshold = n
+		}
 		masked := ""
 		if len(token) >= 4 {
 			masked = "***" + token[len(token)-4:]
@@ -46,12 +54,15 @@ func NotifySettingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"webhook":            webhook,
-			"telegram_bot_token": masked,
-			"telegram_chat_id":   chatID,
-			"dingtalk_webhook":   dingtalk,
-			"feishu_webhook":     feishu,
-			"email_to":           emailTo,
+			"webhook":             webhook,
+			"telegram_bot_token":  masked,
+			"telegram_chat_id":    chatID,
+			"dingtalk_webhook":    dingtalk,
+			"feishu_webhook":      feishu,
+			"email_to":            emailTo,
+			"on_register":         onRegister == "1",
+			"on_big_spend":        onBigSpend == "1",
+			"big_spend_threshold": bigSpendThreshold,
 		})
 	case "POST":
 		if !model.IsRoot(s.Username) {
@@ -59,12 +70,15 @@ func NotifySettingsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body struct {
-			Webhook        string `json:"webhook"`
-			TelegramBot    string `json:"telegram_bot_token"`
-			TelegramChatID string `json:"telegram_chat_id"`
-			Dingtalk       string `json:"dingtalk_webhook"`
-			Feishu         string `json:"feishu_webhook"`
-			EmailTo        string `json:"email_to"`
+			Webhook           string `json:"webhook"`
+			TelegramBot       string `json:"telegram_bot_token"`
+			TelegramChatID    string `json:"telegram_chat_id"`
+			Dingtalk          string `json:"dingtalk_webhook"`
+			Feishu            string `json:"feishu_webhook"`
+			EmailTo           string `json:"email_to"`
+			OnRegister        bool   `json:"on_register"`
+			OnBigSpend        bool   `json:"on_big_spend"`
+			BigSpendThreshold int    `json:"big_spend_threshold"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -77,6 +91,9 @@ func NotifySettingsHandler(w http.ResponseWriter, r *http.Request) {
 			"notify.dingtalk_webhook":   body.Dingtalk,
 			"notify.feishu_webhook":     body.Feishu,
 			"notify.email_to":           body.EmailTo,
+			"notify.on_register":        notifyBoolStr(body.OnRegister),
+			"notify.on_big_spend":       notifyBoolStr(body.OnBigSpend),
+			"notify.big_spend_threshold": strconv.Itoa(body.BigSpendThreshold),
 		} {
 			if err := model.KVSet(k, v); err != nil {
 				http.Error(w, "Save failed: "+err.Error(), http.StatusInternalServerError)

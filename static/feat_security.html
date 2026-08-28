@@ -90,6 +90,26 @@
       <span id="guardMsg" class="msg"></span>
     </div>
   </div>
+
+  <div class="card">
+    <h3>模型审核（Moderation）</h3>
+    <p class="hint">开启后，POST/PUT 的 JSON 请求体会先经过指定渠道的内容审核模型，命中违规内容将直接拒绝。</p>
+    <div class="form-group">
+      <label><input type="checkbox" id="rvEnabled"> 启用模型审核</label>
+      <div class="field">
+        <label>审核渠道 ID</label>
+        <input id="rvChannel" type="number" value="0" placeholder="审核渠道 ID">
+      </div>
+      <div class="field">
+        <label>审核模型</label>
+        <input id="rvModel" placeholder="如 text-moderation-latest">
+      </div>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="saveReview()">保存审核配置</button>
+      <span id="reviewMsg" class="msg"></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -103,6 +123,26 @@ async function loadAll() {
   $('tfUser').value = currentUser;
   await loadOAuth();
   await loadGuard();
+  await loadReview();
+}
+
+async function loadReview() {
+  const r = await api('/api/setting/review');
+  if (!r.ok) { showMsg('reviewMsg', '加载失败', false); return; }
+  const d = await r.json();
+  $('rvEnabled').checked = !!d.enabled;
+  $('rvChannel').value = d.channel_id || 0;
+  $('rvModel').value = d.model || '';
+}
+
+async function saveReview() {
+  const { ok, status, d } = await postJSON('/api/setting/review', {
+    enabled: $('rvEnabled').checked,
+    channel_id: parseInt(v('rvChannel'), 10) || 0,
+    model: v('rvModel').trim()
+  });
+  if (!ok) { showMsg('reviewMsg', '保存失败：' + (d.error || status), false); return; }
+  showMsg('reviewMsg', '已保存', true);
 }
 
 function showMsg(id, text, ok) {

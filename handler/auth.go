@@ -3,6 +3,7 @@ package handler
 import (
 	"api-gateway/model"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -147,6 +148,9 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if err := model.CreateUser(cred.Username, cred.Password, role, quota); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if NotifyTriggersEnabled("register") {
+		_ = NotifyEvent("user_registered", fmt.Sprintf("新用户注册: %s", cred.Username))
 	}
 	// 邀请码：兑换成功则给新用户发放额度，并给邀请人 10% 奖励
 	if cred.Invite != "" {

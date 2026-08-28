@@ -100,6 +100,8 @@ func Migrate() error {
 			models TEXT,
 			scope TEXT,
 			allowed_ips TEXT,
+			rpm INTEGER DEFAULT 0,
+			tpm BIGINT DEFAULT 0,
 			created_at TEXT,
 			updated_at TEXT
 		)`,
@@ -199,6 +201,8 @@ func Migrate() error {
 	if err := ensureCols("tokens", map[string]string{
 		"scope":       "TEXT",
 		"allowed_ips": "TEXT",
+		"rpm":         "INTEGER DEFAULT 0",
+		"tpm":         "BIGINT DEFAULT 0",
 	}); err != nil {
 		return err
 	}

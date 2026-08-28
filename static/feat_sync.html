@@ -32,6 +32,15 @@
       <tbody id="chBody"><tr><td colspan="9" class="muted">加载中…</td></tr></tbody>
     </table>
   </div>
+
+  <div class="card">
+    <h3>模型冲突检测</h3>
+    <div class="form-group">
+      <button class="btn btn-primary" onclick="loadConflicts()">检测</button>
+      <span id="conflictMsg" class="msg"></span>
+    </div>
+    <div id="conflictBox" class="muted">点击「检测」对比上游模型与本地价格表，查找缺失/冲突模型。</div>
+  </div>
 </div>
 
 <script>
@@ -178,9 +187,39 @@ async function batch(action) {
   } catch (e) { msg('批量' + label + '出错：' + e, false); }
 }
 
+async function loadConflicts() {
+  const box = $('conflictBox');
+  const m = $('conflictMsg');
+  box.innerHTML = '<span class="muted">检测中…</span>';
+  m.textContent = '';
+  try {
+    const res = await api('/admin/modelconflicts');
+    if (!res.ok) { box.innerHTML = '<span class="msg">检测失败（' + res.status + '）</span>'; return; }
+    const d = await res.json();
+    const missing = d.missing_models || [];
+    const total = d.all_models != null ? d.all_models : (d.total_models != null ? d.total_models : '-');
+    let html = '<div class="stat-cards" style="margin:0 0 10px">' +
+      '<div class="stat-card"><div class="stat-title">全部模型数</div><div class="stat-value">' + escapeHtml(String(total)) + '</div></div>' +
+      '<div class="stat-card"><div class="stat-title">缺失/冲突模型</div><div class="stat-value" style="color:var(--danger)">' + missing.length + '</div></div>' +
+      '</div>';
+    if (missing.length) {
+      html += '<p class="msg">以下模型在本地价格表中缺失，可能导致计费异常：</p>';
+      html += '<ul style="color:var(--danger);padding-left:20px;line-height:1.8">' +
+        missing.map(function (x) { return '<li>' + escapeHtml(String(x.name != null ? x.name : x)) + '</li>'; }).join('') +
+        '</ul>';
+    } else {
+      html += '<p><span class="status status-on">无冲突</span></p>';
+    }
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<span class="msg">请求出错</span>';
+  }
+}
+
 (async () => {
   try { await ensureAuth(); } catch (e) { return; }
   await loadChannels();
+  await loadConflicts();
 })();
 </script>
 </body>

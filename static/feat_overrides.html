@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>倍率覆盖</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>倍率覆盖 / 订阅管理</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadAll()">刷新</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>倍率覆盖矩阵</h3>
+    <p class="hint">按「用户组 × 令牌组」覆盖计费倍率；命中优先级高于全局倍率，留空规则则用默认倍率。</p>
+    <div class="form-group">
+      <div class="field">
+        <label>用户组</label>
+        <input id="ovUser" placeholder="如 vip">
+      </div>
+      <div class="field">
+        <label>令牌组</label>
+        <input id="ovToken" placeholder="如 premium">
+      </div>
+      <div class="field">
+        <label>倍率（正数）</label>
+        <input id="ovRatio" type="number" step="any" value="1">
+      </div>
+      <button class="btn btn-success" onclick="addOverride()">添加覆盖</button>
+    </div>
+    <p id="ovMsg" class="msg"></p>
+    <table>
+      <thead><tr><th>用户组</th><th>令牌组</th><th>倍率</th><th>操作</th></tr></thead>
+      <tbody id="ovBody"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>订阅管理</h3>
+    <table>
+      <thead><tr><th>用户名</th><th>套餐</th><th>过期时间</th><th>操作</th></tr></thead>
+      <tbody id="subBody"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function showMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+async function loadAll() {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadOverrides();
+  await loadSubs();
+}
+
+async function loadOverrides() {
+  const body = $('ovBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/overrides');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="4" class="msg">加载失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    const map = d.overrides || {};
+    const rows = Object.keys(map).sort().map(function (k) {
+      const i = k.indexOf('|');
+      return { usergroup: k.slice(0, i), tokengroup: k.slice(i + 1), ratio: map[k] };
+    });
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="4" class="muted">暂无覆盖规则</td></tr>'; return; }
+    body.innerHTML = rows.map(function (x) {
+      return '<tr>' +
+        '<td>' + escapeHtml(x.usergroup) + '</td>' +
+        '<td>' + escapeHtml(x.tokengroup) + '</td>' +
+        '<td><span class="status status-on">' + escapeHtml(x.ratio) + '×</span></td>' +
+        '<td><button class="btn btn-danger" onclick="delOverride(\'' + escapeHtml(x.usergroup) + '\',\'' + escapeHtml(x.tokengroup) + '\')">删除</button></td>' +
+      '</tr>';
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="4" class="msg">请求出错</td></tr>';
+  }
+}
+
+async function addOverride() {
+  const usergroup = v('ovUser').trim();
+  const tokengroup = v('ovToken').trim();
+  const ratio = parseFloat(v('ovRatio'));
+  if (!usergroup || !tokengroup || !(ratio > 0)) { showMsg('ovMsg', '请填写用户组、令牌组和正数倍率', false); return; }
+  try {
+    const r = await api('/api/overrides', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usergroup, tokengroup, ratio })
+    });
+    if (!r.ok) { showMsg('ovMsg', '添加失败：' + r.status, false); return; }
+    showMsg('ovMsg', '已添加', true);
+    $('ovUser').value = '';
+    $('ovToken').value = '';
+    $('ovRatio').value = '1';
+    loadOverrides();
+  } catch (e) { showMsg('ovMsg', '请求出错', false); }
+}
+
+async function delOverride(ug, tg) {
+  if (!confirm('确认删除 用户组[' + ug + '] × 令牌组[' + tg + '] 的覆盖倍率？')) return;
+  try {
+    const r = await api('/api/overrides?usergroup=' + encodeURIComponent(ug) + '&tokengroup=' + encodeURIComponent(tg), { method: 'DELETE' });
+    if (!r.ok) { showMsg('ovMsg', '删除失败：' + r.status, false); return; }
+    loadOverrides();
+  } catch (e) { showMsg('ovMsg', '请求出错', false); }
+}
+
+async function loadSubs() {
+  const body = $('subBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/subscriptions');
+    if (!r.ok) { body.innerHTML = '<tr><td colspan="4" class="msg">加载失败（' + r.status + '）</td></tr>'; return; }
+    const d = await r.json();
+    const list = d.subscriptions || [];
+    if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="muted">暂无订阅</td></tr>'; return; }
+    body.innerHTML = list.map(function (s) {
+      return '<tr>' +
+        '<td>' + escapeHtml(s.username) + '</td>' +
+        '<td>' + escapeHtml(s.plan || '-') + '</td>' +
+        '<td>' + escapeHtml(fmtTime(s.expire) || '-') + '</td>' +
+        '<td><button class="btn btn-danger" onclick="resetSub(\'' + escapeHtml(s.username) + '\',\'' + escapeHtml(s.plan || '') + '\')">重置</button></td>' +
+      '</tr>';
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="4" class="msg">请求出错</td></tr>';
+  }
+}
+
+async function resetSub(username, plan) {
+  if (!confirm('确认重置用户 ' + username + ' 的订阅？')) return;
+  try {
+    const r = await api('/api/subscriptions/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, plan })
+    });
+    if (!r.ok) { showMsg('ovMsg', '重置失败：' + r.status, false); return; }
+    showMsg('ovMsg', '已重置', true);
+    loadSubs();
+  } catch (e) { showMsg('ovMsg', '请求出错', false); }
+}
+
+loadAll();
+</script>
+</body>
+</html>

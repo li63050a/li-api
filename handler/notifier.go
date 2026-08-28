@@ -53,6 +53,20 @@ func NotifyEvent(kind, message string) error {
 	return nil
 }
 
+// NotifyTriggersEnabled 返回指定通知触发开关是否开启（kind: "register" / "big_spend"）
+func NotifyTriggersEnabled(kind string) bool {
+	val, _ := model.KVGet("notify.on_" + kind)
+	return val == "1"
+}
+
+// notifyBoolStr 将布尔开关转换为 KV 存储用的 "1"/"0"
+func notifyBoolStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
 // notifyTelegram 发送 Telegram Bot 消息（application/x-www-form-urlencoded）
 func notifyTelegram(token, chatID, message string) {
 	form := url.Values{}

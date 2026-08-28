@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,126 @@ var (
 	userLimitMu sync.Mutex
 	userReqWin  = map[string][]time.Time{}
 )
+
+// 令牌级分钟级限流窗口（滑动 60s）与内存用量聚合
+var (
+	tokReqWin = struct {
+		mu sync.Mutex
+		m  map[string][]time.Time
+	}{m: map[string][]time.Time{}}
+	tokTokWin = struct {
+		mu sync.Mutex
+		m  map[string][]struct {
+			t time.Time
+			n int64
+		}
+	}{m: map[string][]struct {
+		t time.Time
+		n int64
+	}{}}
+	tokenUsage = struct {
+		mu sync.Mutex
+		m  map[string]*struct {
+			Requests int64
+			Cost     int64
+		}
+	}{m: map[string]*struct {
+		Requests int64
+		Cost     int64
+	}{}}
+)
+
+// tokReqAllowed 令牌级每分钟请求限流（滑动 60s 窗口）
+func tokReqAllowed(key string, limit int) bool {
+	if limit <= 0 || key == "" {
+		return true
+	}
+	tokReqWin.mu.Lock()
+	defer tokReqWin.mu.Unlock()
+	now := time.Now()
+	buf := tokReqWin.m[key]
+	i := 0
+	for ; i < len(buf); i++ {
+		if now.Sub(buf[i]) < 60*time.Second {
+			break
+		}
+	}
+	buf = buf[i:]
+	if len(buf) >= limit {
+		tokReqWin.m[key] = buf
+		return false
+	}
+	buf = append(buf, now)
+	tokReqWin.m[key] = buf
+	return true
+}
+
+// tokTPMAllowed 令牌级每分钟 token 消耗预检：窗口内累计 + 本次估算 > TPM 则拒绝，否则记账
+func tokTPMAllowed(key string, tpm, cost int64) bool {
+	if tpm <= 0 || cost <= 0 || key == "" {
+		return true
+	}
+	tokTokWin.mu.Lock()
+	defer tokTokWin.mu.Unlock()
+	now := time.Now()
+	buf := tokTokWin.m[key]
+	kept := buf[:0]
+	var sum int64
+	for _, e := range buf {
+		if now.Sub(e.t) < 60*time.Second {
+			kept = append(kept, e)
+			sum += e.n
+		}
+	}
+	buf = kept
+	if sum+cost > tpm {
+		tokTokWin.m[key] = buf
+		return false
+	}
+	buf = append(buf, struct {
+		t time.Time
+		n int64
+	}{t: now, n: cost})
+	tokTokWin.m[key] = buf
+	return true
+}
+
+// tokEstCost 转发前对本次请求 token 消耗的粗略估算（用于 TPM 预检）
+func tokEstCost(bodyBuf []byte) int64 {
+	return maxInt64(1, int64(len(bodyBuf))/4)
+}
+
+// recordTokenUsage 累加令牌的请求次数与消耗（内存聚合，供 /api/token/usage 查询）
+func recordTokenUsage(key string, cost int64) {
+	tokenUsage.mu.Lock()
+	defer tokenUsage.mu.Unlock()
+	e := tokenUsage.m[key]
+	if e == nil {
+		e = &struct {
+			Requests int64
+			Cost     int64
+		}{}
+		tokenUsage.m[key] = e
+	}
+	e.Requests++
+	e.Cost += cost
+}
+
+// notifyBigSpend 大额消耗通知：单次消耗达到配置阈值时推送
+func notifyBigSpend(key, modelName string, cost int64) {
+	if cost <= 0 {
+		return
+	}
+	v, ok := model.KVGet("notify.big_spend_threshold")
+	if !ok || v == "" {
+		return
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	if err != nil || n <= 0 || cost < n {
+		return
+	}
+	_ = NotifyEvent("big_spend", fmt.Sprintf("大额消耗 token=%s cost=%d model=%s", maskToken(key), cost, modelName))
+}
 
 func userRateAllowed(username string, limit int) bool {
 	if limit <= 0 || username == "" {
@@ -266,6 +387,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		_ = model.UseToken(key, cost)
 		model.AddUserUsed(tok.Owner, cost)
 		recordStats(cost)
+		recordTokenUsage(key, cost)
+		notifyBigSpend(key, wsModel, cost)
 		logAccess(map[string]interface{}{
 			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
 			"model": wsModel, "group": group, "token": maskToken(key),
@@ -298,6 +421,16 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	// /v1/models 直接构造返回
 	if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/models") {
 		serveModels(w, group)
+		return
+	}
+
+	// 令牌级 RPM / TPM 限流（滑动 60s 窗口，TPM 用估算值预检）
+	if tok.RPM > 0 && !tokReqAllowed(key, tok.RPM) {
+		writeError(w, http.StatusTooManyRequests, "rate limit exceeded", "rate_limit_error")
+		return
+	}
+	if tok.TPM > 0 && !tokTPMAllowed(key, tok.TPM, tokEstCost(bodyBuf)) {
+		writeError(w, http.StatusTooManyRequests, "token TPM limit exceeded", "rate_limit_error")
 		return
 	}
 
@@ -381,6 +514,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		_ = model.UseToken(key, cost)
 		model.AddUserUsed(tok.Owner, cost)
 		recordStats(cost)
+		recordTokenUsage(key, cost)
+		notifyBigSpend(key, modelName, cost)
 		logAccess(map[string]interface{}{
 			"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,
 			"model": modelName, "group": group, "token": maskToken(key),
@@ -439,6 +574,8 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	_ = model.UseToken(key, cost)
 	model.AddUserUsed(tok.Owner, cost)
 	recordStats(cost)
+	recordTokenUsage(key, cost)
+	notifyBigSpend(key, modelName, cost)
 
 	logAccess(map[string]interface{}{
 		"time": start.Format(time.RFC3339), "method": r.Method, "path": r.URL.Path,

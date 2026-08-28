@@ -91,6 +91,14 @@
 | 固定价格 | `/admin/prices` 按模型设固定单价（优先于倍率计费），`/api/prices` 价格矩阵 |
 | 系统任务 | 定时任务运行记录 `/api/tasks`（列表/清空） |
 | 微信登录 | `/oauth/wechat/authorize` 二维码授权跳转 + 配置位（需服务号 AppID） |
+| 模型审核 | `/api/setting/review` 配置，请求内容交给审核渠道（moderations）命中即 403（失败放行） |
+| 通知触发 | 新用户注册 / 大额消耗 触发通知（`/api/setting/notify` 可开关与设阈值） |
+| 令牌限流 | 令牌级 RPM / TPM（每分钟请求数 / token 数，`/admin/tokens` 配置） |
+| 令牌用量 | `/api/token/usage` 查看自己令牌的请求数 / 消耗 |
+| 冲突检测 | `/admin/modelconflicts` 检测被别名/重定向/虚拟模型引用但无渠道支持的模型 |
+| 请求重放 | `/api/admin/replay` 按日志时间取回请求体供调试 |
+| 倍率覆盖 | `/api/overrides` 用户组×令牌组倍率覆盖矩阵 |
+| 订阅管理 | `/api/subscriptions` 管理员查看 / 重置订阅 |
 
 > 技术栈：**纯 Go + 内嵌 HTML/CSS/JS，无 Node.js 构建链**，`go build` 直接产出单个二进制即用。
 

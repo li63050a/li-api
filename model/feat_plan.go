@@ -83,3 +83,16 @@ func SaveSub(username string, s Sub) error {
 	}
 	return KVSet("sub."+username, string(b))
 }
+
+// AllSubs 返回全部用户订阅（key 为用户名，value 为 Sub JSON）
+func AllSubs() map[string]string {
+	return KVGetAll("sub.")
+}
+
+// DelSub 删除用户订阅
+func DelSub(username string) error {
+	if username == "" {
+		return errors.New("username required")
+	}
+	return KVDel("sub." + username)
+}

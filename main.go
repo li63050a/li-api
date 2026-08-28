@@ -19,7 +19,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（按 0.0.x 依次递增）
-const Version = "0.0.1.8"
+const Version = "0.0.1.9"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")
@@ -114,8 +114,8 @@ func main() {
 	http.HandleFunc("/admin/redemptions/", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedemptionHandler)))))
 	http.HandleFunc("/admin/model_redirects", handler.SecurityHeaders(handler.CSRFCheck(handler.MaintenanceMiddleware(handler.GuardMiddleware(handler.RedirectHandler)))))
 
-	// 模型路由转发（OpenAI 兼容 /v1/*，挂安全响应头 + 请求计数 + 维护模式 + 敏感词审查 + 安全守卫）
-	http.HandleFunc("/v1/", handler.SecurityHeaders(handler.CountMiddleware(handler.MaintenanceMiddleware(handler.SensitiveMiddleware(handler.GuardMiddleware(handler.RelayHandler))))))
+	// 模型路由转发（OpenAI 兼容 /v1/*，挂安全响应头 + 请求计数 + 维护模式 + 敏感词审查 + 模型审核 + 安全守卫）
+	http.HandleFunc("/v1/", handler.SecurityHeaders(handler.CountMiddleware(handler.MaintenanceMiddleware(handler.SensitiveMiddleware(handler.ModelReviewMiddleware(handler.GuardMiddleware(handler.RelayHandler)))))))
 
 	// 启动服务（支持 HTTPS / 优雅停机 / SIGHUP 热重载缓存）
 	listen := cfg.Addr()
