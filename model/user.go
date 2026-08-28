@@ -15,7 +15,7 @@ import (
 	"api-gateway/db"
 )
 
-// User 管理员账户（轻量实现：单文件存储，默认 root/123456）
+// User 账户（仿 new-api：首个注册用户自动成为 root 超级管理员，不预置默认账号）
 type User struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
@@ -46,7 +46,8 @@ var (
 	sessions sync.Map // token -> *Session
 )
 
-// InitUsers 从 SQLite 加载用户（首次运行自动从旧 JSON 迁移；若仍为空则创建默认 root/123456）
+// InitUsers 从 SQLite 加载用户（首次运行自动从旧 JSON 迁移）。
+// 不预置默认管理员；若系统尚无任何用户，可用环境变量 INIT_ROOT_USER / INIT_ROOT_PASSWORD 按需引导初始 root。
 func InitUsers() error {
 	us, err := loadUsersFromDB()
 	if err != nil {
@@ -58,11 +59,17 @@ func InitUsers() error {
 		}
 	}
 	if len(us) == 0 {
-		u := User{ID: 1, Username: "root", Role: "root", Status: 1, Quota: -1, Used: 0}
-		u.PasswordHash = hashPassword("123456")
-		users = []User{u}
-		userNext = 2
-		return saveUsers()
+		ru, rp := os.Getenv("INIT_ROOT_USER"), os.Getenv("INIT_ROOT_PASSWORD")
+		if ru != "" && rp != "" {
+			u := User{ID: 1, Username: ru, Role: "root", Status: 1, Quota: -1, Used: 0}
+			u.PasswordHash = hashPassword(rp)
+			users = []User{u}
+			userNext = 2
+			return saveUsers()
+		}
+		users = []User{}
+		userNext = 1
+		return nil
 	}
 	users = us
 	userNext = 1
@@ -325,6 +332,13 @@ func IsRoot(username string) bool {
 		}
 	}
 	return false
+}
+
+// CountUsers 返回当前用户总数（用于首个注册用户自动成为 root）
+func CountUsers() int {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	return len(users)
 }
 
 // HashPassword 导出密码哈希函数（供 handler 在更新密码时使用）

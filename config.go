@@ -72,8 +72,9 @@ func printHelp() {
   data_dir  数据存储目录，如 "data"
 
 说明:
-  - 首次运行会自动创建 config.json 与 data/ 目录及各数据文件
-  - 管理后台默认账号 root / 123456（密码以哈希存储，可在后台修改）
-  - 路由配置存于 data/ 下（routes.json / channels.json / tokens.json / user.json / setting.json）
+  - 首次运行会自动创建 config.json、data/ 目录与 SQLite 数据库 gateway.db
+  - 不预置默认管理员：系统无用户时，首个注册用户自动成为 root 超级管理员
+  - 也可用环境变量 INIT_ROOT_USER / INIT_ROOT_PASSWORD 按需引导初始 root
+  - 数据存于 data/gateway.db（users/tokens/channels/settings 等表）
 `)
 }

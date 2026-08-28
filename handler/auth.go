@@ -69,12 +69,17 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "用户名至少3位，密码至少6位", http.StatusBadRequest)
 		return
 	}
-	if err := model.InsertUser(cred.Username, cred.Password); err != nil {
+	// 仿 new-api：系统无任何用户时，首个注册用户自动成为 root 超级管理员
+	role := "user"
+	if model.CountUsers() == 0 {
+		role = "root"
+	}
+	if err := model.CreateUser(cred.Username, cred.Password, role, 0); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	tok := model.CreateSession(cred.Username)
-	json.NewEncoder(w).Encode(map[string]interface{}{"token": tok, "username": cred.Username, "role": "user"})
+	json.NewEncoder(w).Encode(map[string]interface{}{"token": tok, "username": cred.Username, "role": role})
 }
 
 // SelfHandler GET /api/user/self

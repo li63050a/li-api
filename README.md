@@ -72,13 +72,13 @@ LISTEN=:8080 DATA_DIR=/data/gateway ./gateway
 
 启动后：
 
-- 管理后台：http://localhost:8090/（先登录 `root` / `123456`，首次使用请改密）
+- 管理后台：http://localhost:8090/（**不预置默认管理员**：系统无用户时，首个注册用户自动成为 root 超级管理员）
 - 账户接口：`/api/user/login`、`/api/user/register`
 - 管理 API：`/admin/channels`、`/admin/tokens`
 - 转发入口：`/v1/*`（仿 new-api 的 OpenAI 兼容转发）、`/proxy/*`（旧版前缀代理）
 
-> 默认内置管理员账号 `root` / `123456`，数据文件位于 `data/` 目录。
-> 多管理员可在 `config.json` 的 `root_users` 中追加用户名（含默认 `root`）。
+> 数据位于 `data/` 目录（SQLite `gateway.db`）。如需无人值守初始化，可用环境变量
+> `INIT_ROOT_USER=admin INIT_ROOT_PASSWORD=<强密码>` 在首次启动时引导初始 root 账号。
 
 ### 命令行参数
 
@@ -90,12 +90,12 @@ LISTEN=:8080 DATA_DIR=/data/gateway ./gateway
 
 ### 添加一条渠道（示例：转发到 OpenAI）
 
-通过页面或直接调用 API（需先登录拿到 root 会话令牌）：
+通过页面或直接调用 API（需先登录拿到 root 会话令牌，以下以首次注册的管理员为例）：
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8090/api/user/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"root","password":"123456"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+  -d '{"username":"<你的管理员用户名>","password":"<你的管理员密码>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 
 curl -X POST http://localhost:8090/admin/channels \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -121,7 +121,7 @@ curl -X POST http://localhost:8090/admin/channels \
   是否允许公开注册由全局设置 `open_register` 控制；关闭后普通用户无法自助注册，需管理员创建。
 - **会话**：后续请求在 `Authorization: Bearer <token>` 中携带会话令牌。
 - **分级**：
-  - `root`（超级管理员，见 `config.json` 的 `root_users`）：可管理全部渠道 / 令牌 / 全局设置。
+  - `root`（超级管理员）：**首个注册用户自动成为 root**（也可用 `INIT_ROOT_USER`/`INIT_ROOT_PASSWORD` 引导），可管理全部渠道 / 令牌 / 全局设置。
   - 普通用户：仅能查看与删除**自己创建**的令牌，其余管理接口返回 403。
 
 ## 运营模式（self / biz）
@@ -232,7 +232,6 @@ curl https://你的网关/v1/chat/completions \
 {
   "listen": ":8090",
   "data_dir": "data",
-  "root_users": ["root"],
   "setting": {
     "mode": "self",
     "open_register": true,
@@ -244,13 +243,12 @@ curl https://你的网关/v1/chat/completions \
 | 字段 | 含义 |
 | --- | --- |
 | `listen` | 监听地址，默认 `:8090` |
-| `data_dir` | 数据目录（各类 JSON 存放处），默认 `data`；可通过环境变量 `DATA_DIR` 覆盖 |
-| `root_users` | 超级管理员用户名列表（默认含 `root`） |
+| `data_dir` | 数据目录（SQLite 存放处），默认 `data`；可通过环境变量 `DATA_DIR` 覆盖 |
 | `setting.mode` | `self` 自用 / `biz` 营业 |
 | `setting.open_register` | 是否允许公开注册 |
 | `setting.model_ratio` | 模型倍率表（营业计费用） |
 
-数据文件均落在 `data_dir` 下：`config.json`、`channels.json`、`tokens.json`、`routes.json`、`users.json`、`setting.json`、`access.log`。
+数据均落在 `data_dir` 下的 `gateway.db`（SQLite 关系型存储，纯 Go 无 CGO；旧版 JSON 首次启动自动迁移为 `*.json.bak`）。
 
 ## 环境变量
 
@@ -327,14 +325,15 @@ upx --best gateway
 ```bash
 curl -X POST http://localhost:8090/api/user/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"root","password":"123456"}'
+  -d '{"username":"<管理员用户名>","password":"<管理员密码>"}'
 ```
 
 响应 `200`：
 
 ```json
-{ "token": "3df33259...", "username": "root", "role": "root" }
+{ "token": "3df33259...", "username": "<管理员用户名>", "role": "root" }
 ```
+> 首次部署无任何账号：先 `POST /api/user/register`，**首个注册用户自动成为 root**。
 
 凭据错误返回 `401`。
 
