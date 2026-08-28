@@ -84,6 +84,15 @@
 | 聊天预设 | `/api/presets` 预设 CRUD，聊天页一键套用 |
 | 每日签到 | `/api/user/checkin` 每日签到送额度（可配），UI 一键签到 |
 | 性能监控 | `/api/ops/perf`（CPU/内存/goroutine），超阈值自动 503 保护（`/api/setting/perf` 配置） |
+| 上游同步 | `/admin/channels/sync` 自动拉取上游 `/v1/models` 合并进渠道模型列表 |
+| 渠道标签 | 渠道 `tags` + `/admin/channels/tags`、批量启用/禁用/删除（`/admin/channels/batch`） |
+| 渠道亲和 | 令牌+模型固定路由到上次成功的渠道，提升缓存命中 |
+| 正则重定向 | `redirect_re.` 规则：正则匹配模型名批量重定向 |
+| 固定价格 | `/admin/prices` 按模型设固定单价（优先于倍率计费），`/api/prices` 价格矩阵 |
+| 系统任务 | 定时任务运行记录 `/api/tasks`（列表/清空） |
+| 微信登录 | `/oauth/wechat/authorize` 二维码授权跳转 + 配置位（需服务号 AppID） |
+
+> 技术栈：**纯 Go + 内嵌 HTML/CSS/JS，无 Node.js 构建链**，`go build` 直接产出单个二进制即用。
 
 ---
 

@@ -24,6 +24,7 @@
       <input id="cType" placeholder="类型(openai/azure/anthropic)" value="openai">
       <input id="cBaseURL" placeholder="上游基地址">
       <input id="cKeys" placeholder="上游密钥(逗号分隔,轮流)">
+      <input id="cTags" placeholder="标签(逗号分隔)">
     </div>
     <div class="form-group">
       <select id="cAuthType"><option value="bearer">Bearer</option><option value="header">Header</option><option value="query">Query</option></select>
@@ -44,17 +45,35 @@
 
   <div class="card">
     <h3>渠道列表</h3>
+    <div class="form-group" style="justify-content:flex-start">
+      <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="checkAll" onclick="toggleAll()"> 全选</label>
+      <select id="batchAction" style="flex:0 0 auto">
+        <option value="enable">启用</option>
+        <option value="disable">禁用</option>
+        <option value="delete">删除</option>
+      </select>
+      <button class="btn btn-primary" onclick="applyBatch()">应用</button>
+      <span id="batchMsg" class="msg"></span>
+    </div>
     <table>
-      <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>分组</th><th>优先级</th><th>权重</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
-      <tbody id="channelTable"><tr><td colspan="11" class="muted">加载中…</td></tr></tbody>
+      <thead><tr><th style="width:36px"><input type="checkbox" id="checkAllHead" onclick="toggleAllHead()"></th><th>ID</th><th>名称</th><th>类型</th><th>基地址</th><th>模型</th><th>标签</th><th>分组</th><th>优先级</th><th>权重</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
+      <tbody id="channelTable"><tr><td colspan="13" class="muted">加载中…</td></tr></tbody>
     </table>
   </div>
 </div>
 
 <script>
+function renderTags(tags) {
+  if (!tags) return '';
+  return String(tags).split(',').map(function (t) {
+    t = t.trim();
+    return t ? '<span class="type-tag">' + escapeHtml(t) + '</span>' : '';
+  }).filter(Boolean).join(' ');
+}
+
 async function loadChannels(){ const res=await api('/admin/channels'); if(!res.ok) return; const cs=await res.json();
-  document.getElementById('channelTable').innerHTML = cs.map(c=>`<tr><td>${c.id}</td><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.type)}</td><td>${escapeHtml(c.base_url)}</td>
-    <td>${escapeHtml(c.models)}</td><td>${escapeHtml(c.group)}</td><td>${c.priority}</td><td>${c.weight}</td>
+  document.getElementById('channelTable').innerHTML = cs.map(c=>`<tr><td><input type="checkbox" class="chk" value="${c.id}"></td><td>${c.id}</td><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.type)}</td><td>${escapeHtml(c.base_url)}</td>
+    <td>${escapeHtml(c.models)}</td><td>${renderTags(c.tags)}</td><td>${escapeHtml(c.group)}</td><td>${c.priority}</td><td>${c.weight}</td>
     <td><span class="status ${c.status?'status-on':'status-off'}">${c.status?'启用':'禁用'}</span></td>
     <td><button class="btn btn-link" onclick="testChannel(${c.id})">测试</button></td>
     <td><button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button></td></tr>`).join('');
@@ -70,11 +89,42 @@ async function testChannel(id){ try{ const res=await api('/admin/channels/test/'
 async function addChannel(){ const data={name:v('cName'),type:v('cType'),base_url:v('cBaseURL'),keys:v('cKeys'),
   auth_type:v('cAuthType'),auth_key:v('cAuthKey'),models:v('cModels'),model_mapping:v('cModelMap'),group:v('cGroup'),
   priority:parseInt(v('cPriority'))||0,weight:parseInt(v('cWeight'))||1,rate_limit:parseInt(v('cRateLimit'))||0,
-  status:document.getElementById('cStatus').checked?1:0};
+  tags:v('cTags'),status:document.getElementById('cStatus').checked?1:0};
   const res=await api('/admin/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   if(!res.ok){ alert('添加失败：'+(await res.text())); return; }
+  document.getElementById('cTags').value='';
   loadChannels(); }
 async function deleteChannel(id){ if(!confirm('确认删除？'))return; await api('/admin/channels/'+id,{method:'DELETE'}); loadChannels(); }
+
+function toggleAll(){
+  const all = document.getElementById('checkAll').checked;
+  document.querySelectorAll('.chk').forEach(function(c){ c.checked = all; });
+}
+function toggleAllHead(){
+  const all = document.getElementById('checkAllHead').checked;
+  document.getElementById('checkAll').checked = all;
+  document.querySelectorAll('.chk').forEach(function(c){ c.checked = all; });
+}
+function checkedIds(){
+  return Array.prototype.map.call(document.querySelectorAll('.chk:checked'), function(c){ return parseInt(c.value,10); })
+    .filter(function(n){ return !isNaN(n); });
+}
+async function applyBatch(){
+  const ids = checkedIds();
+  const action = v('batchAction');
+  const label = {enable:'启用',disable:'禁用',delete:'删除'}[action] || action;
+  const m = document.getElementById('batchMsg');
+  if(!ids.length){ m.textContent='请先勾选渠道'; m.style.color='var(--danger)'; return; }
+  if(action==='delete' && !confirm('确认删除 '+ids.length+' 个渠道？')) return;
+  try{
+    const res = await api('/admin/channels/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids, action:action})});
+    if(!res.ok){ m.textContent='批量'+label+'失败：'+res.status; m.style.color='var(--danger)'; return; }
+    let d={}; try{ d=await res.json(); }catch(e){ /* 空响应 */ }
+    m.textContent='已执行批量'+label+(d && d.affected!=null ? '（'+d.affected+' 个）' : '')+(d && d.message ? '：'+d.message : '');
+    m.style.color='var(--success)';
+    loadChannels();
+  }catch(e){ m.textContent='批量'+label+'出错：'+e; m.style.color='var(--danger)'; }
+}
 
 (async () => {
   try { await ensureAuth(); } catch (e) { return; }

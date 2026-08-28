@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ const (
 var (
 	autoDisabled sync.Map // channelID -> time.Time（被自动禁用的时刻）
 	failCount    sync.Map // channelID -> *int64（连续失败计数）
+	affinity     sync.Map // tokenKey|modelName -> channelID（同令牌+模型的亲和路由）
 )
 
 // 按用户的分钟级请求限流（滑动窗口）
@@ -99,10 +101,44 @@ func isChannelError(status int) bool {
 	return status == 401 || status == 403 || status == 429 || status >= 500
 }
 
+// affinityKey 生成亲和路由键：令牌 key + 模型名
+func affinityKey(key, model string) string {
+	return key + "|" + model
+}
+
+// setAffinity 记录该令牌+模型最近成功的渠道
+func setAffinity(key, model string, id int) {
+	affinity.Store(affinityKey(key, model), id)
+}
+
+// getAffinity 读取该令牌+模型的亲和渠道；未记录则 ok=false
+func getAffinity(key, model string) (int, bool) {
+	if v, ok := affinity.Load(affinityKey(key, model)); ok {
+		if id, ok2 := v.(int); ok2 {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// clearAffinity 清除该令牌+模型的亲和渠道（发生渠道失败时）
+func clearAffinity(key, model string) {
+	affinity.Delete(affinityKey(key, model))
+}
+
 // ResolveRedirect 解析全局模型重定向（KV redirect.<name>）；未配置则原样返回
 func ResolveRedirect(name string) string {
 	if resolved, ok := model.KVGet("redirect." + name); ok && resolved != "" {
 		return resolved
+	}
+	// 正则重定向：KV redirect_re.<regex> 键值为目标模型，首个匹配生效
+	for pattern, target := range model.KVGetAll("redirect_re.") {
+		if target == "" {
+			continue
+		}
+		if matched, err := regexp.MatchString(pattern, name); err == nil && matched {
+			return target
+		}
 	}
 	return name
 }
@@ -287,6 +323,28 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 亲和路由：同令牌+模型优先复用上次成功渠道（把该渠道的 target 块排到最前）
+	if aId, ok := getAffinity(key, modelName); ok {
+		first := -1
+		for i, t := range targets {
+			if t.channel.ID == aId {
+				first = i
+				break
+			}
+		}
+		if first > 0 {
+			var pref, rest []target
+			for _, t := range targets {
+				if t.channel.ID == aId {
+					pref = append(pref, t)
+				} else {
+					rest = append(rest, t)
+				}
+			}
+			targets = append(pref, rest...)
+		}
+	}
+
 	start := time.Now()
 	lastErr := error(nil)
 
@@ -308,8 +366,10 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(rewriteSSEModel(upstream, modelName)(tail), r)
 		if lastErr == nil && !isChannelError(cw.status) {
 			markChannelSuccess(t.channel.ID)
+			setAffinity(key, modelName, t.channel.ID)
 		} else {
 			markChannelFailure(t.channel.ID)
+			clearAffinity(key, modelName)
 		}
 		// 计费：优先解析 SSE 流中的 usage，缺失时按字节估算
 		prompt, comp := parseSSEUsage(tail.Bytes())
@@ -350,6 +410,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		failed := lastErr != nil || isChannelError(bw.status)
 		if !failed {
 			markChannelSuccess(t.channel.ID)
+			setAffinity(key, modelName, t.channel.ID)
 			respStatus = bw.status
 			respHeader = bw.header
 			// 把响应里的上游模型名还原为公开名

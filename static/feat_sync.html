@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上游同步</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>上游同步 / 渠道批量</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadChannels()">刷新</button>
+      <button class="btn btn-success" onclick="syncSelected()">同步模型</button>
+      <button class="btn btn-warning" onclick="batch('enable')">批量启用</button>
+      <button class="btn btn-warning" onclick="batch('disable')">批量禁用</button>
+      <button class="btn btn-danger" onclick="batch('delete')">批量删除</button>
+      <span id="msg" class="msg"></span>
+    </div>
+  </div>
+  <p class="hint">勾选渠道后执行批量操作；「同步模型」会拉取上游模型列表并写入本地渠道，结果逐渠道展示。全选仅作用于当前列表。</p>
+
+  <div class="card">
+    <h3>渠道列表</h3>
+    <table>
+      <thead><tr>
+        <th style="width:36px"><input type="checkbox" id="checkAll" onclick="toggleAll()"></th>
+        <th>ID</th><th>名称</th><th>类型</th><th>分组</th><th>模型</th><th>标签</th><th>状态</th><th>同步结果</th>
+      </tr></thead>
+      <tbody id="chBody"><tr><td colspan="9" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let channels = [];
+let syncResults = {};
+
+function renderTags(tags) {
+  if (!tags) return '';
+  return String(tags).split(',').map(function (t) {
+    t = t.trim();
+    return t ? '<span class="type-tag">' + escapeHtml(t) + '</span>' : '';
+  }).filter(Boolean).join(' ');
+}
+
+function msg(t, ok) {
+  const el = $('msg');
+  el.textContent = t;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+async function loadChannels() {
+  const body = $('chBody');
+  body.innerHTML = '<tr><td colspan="9" class="muted">加载中…</td></tr>';
+  try {
+    const res = await api('/admin/channels');
+    if (!res.ok) { body.innerHTML = '<tr><td colspan="9" class="msg">加载失败（' + res.status + '）</td></tr>'; return; }
+    const d = await res.json();
+    channels = Array.isArray(d) ? d : (d.channels || d.data || d.list || []);
+    render();
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="9" class="msg">请求出错</td></tr>';
+  }
+}
+
+function syncCell(id) {
+  const r = syncResults[String(id)];
+  if (!r) return '<span class="muted">-</span>';
+  if (r.error || r.success === false) {
+    return '<span class="status status-off">失败</span> ' + escapeHtml(r.error || r.message || '');
+  }
+  const added = r.added != null ? r.added : r.created;
+  const updated = r.updated;
+  const parts = [];
+  if (added != null) parts.push('新增 ' + added);
+  if (updated != null) parts.push('更新 ' + updated);
+  if (!parts.length && r.message) parts.push(r.message);
+  if (!parts.length) parts.push('成功');
+  return '<span class="status status-on">完成</span> ' + escapeHtml(parts.join(', '));
+}
+
+function render() {
+  const body = $('chBody');
+  if (!channels.length) {
+    body.innerHTML = '<tr><td colspan="9" class="muted">暂无渠道</td></tr>';
+    return;
+  }
+  body.innerHTML = channels.map(function (c) {
+    return '<tr>' +
+      '<td><input type="checkbox" class="chk" value="' + c.id + '"></td>' +
+      '<td>' + c.id + '</td>' +
+      '<td>' + escapeHtml(c.name) + '</td>' +
+      '<td>' + escapeHtml(c.type) + '</td>' +
+      '<td>' + escapeHtml(c.group) + '</td>' +
+      '<td class="small">' + escapeHtml(c.models) + '</td>' +
+      '<td>' + renderTags(c.tags) + '</td>' +
+      '<td><span class="status ' + (c.status ? 'status-on' : 'status-off') + '">' + (c.status ? '启用' : '禁用') + '</span></td>' +
+      '<td>' + syncCell(c.id) + '</td>' +
+    '</tr>';
+  }).join('');
+  const all = $('checkAll');
+  if (all) all.checked = channels.length > 0 && document.querySelectorAll('.chk:checked').length === channels.length;
+}
+
+function toggleAll() {
+  const all = $('checkAll').checked;
+  document.querySelectorAll('.chk').forEach(function (c) { c.checked = all; });
+}
+
+function checkedIds() {
+  return Array.prototype.map.call(document.querySelectorAll('.chk:checked'), function (c) { return parseInt(c.value, 10); })
+    .filter(function (n) { return !isNaN(n); });
+}
+
+function collectResults(d) {
+  const map = {};
+  const push = function (it) {
+    if (!it) return;
+    let id = it.id != null ? it.id : it.channel_id;
+    if (id == null && it.channel != null) id = it.channel.id;
+    if (id != null) map[String(id)] = it;
+  };
+  if (Array.isArray(d)) { d.forEach(push); return map; }
+  if (d && typeof d === 'object') {
+    const arr = d.results || d.data || d.list || d.channels || d.details;
+    if (Array.isArray(arr)) arr.forEach(push);
+    else if (arr && typeof arr === 'object') {
+      Object.keys(arr).forEach(function (k) {
+        const it = arr[k];
+        if (it && typeof it === 'object') { map[k] = it; } else { map[k] = { id: k, message: String(it) }; }
+      });
+    } else if (d.items) { Object.keys(d.items).forEach(function (k) { map[k] = d.items[k]; }); }
+  }
+  return map;
+}
+
+async function syncSelected() {
+  const ids = checkedIds();
+  if (!ids.length) { msg('请先勾选渠道', false); return; }
+  if (!confirm('同步 ' + ids.length + ' 个渠道的上游模型？')) return;
+  msg('同步中…', true);
+  try {
+    const res = await api('/admin/channels/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: ids })
+    });
+    if (!res.ok) { msg('同步失败：' + res.status + ' ' + (await res.text().catch(function () { return ''; })), false); return; }
+    let d = {};
+    try { d = await res.json(); } catch (e) { /* 空响应 */ }
+    syncResults = collectResults(d);
+    const done = Object.keys(syncResults).length;
+    msg('同步完成：' + done + ' 个渠道返回结果', true);
+    render();
+  } catch (e) { msg('同步出错：' + e, false); }
+}
+
+async function batch(action) {
+  const ids = checkedIds();
+  if (!ids.length) { msg('请先勾选渠道', false); return; }
+  const label = { enable: '启用', disable: '禁用', delete: '删除' }[action] || action;
+  if (action === 'delete' && !confirm('确认删除 ' + ids.length + ' 个渠道？')) return;
+  try {
+    const res = await api('/admin/channels/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: ids, action: action })
+    });
+    if (!res.ok) { msg('批量' + label + '失败：' + res.status, false); return; }
+    let d = {};
+    try { d = await res.json(); } catch (e) { /* 空响应 */ }
+    msg('已执行批量' + label + (d && d.affected != null ? '（' + d.affected + ' 个）' : '') + (d && d.message ? '：' + d.message : ''), true);
+    syncResults = {};
+    await loadChannels();
+  } catch (e) { msg('批量' + label + '出错：' + e, false); }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadChannels();
+})();
+</script>
+</body>
+</html>

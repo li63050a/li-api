@@ -11,6 +11,7 @@ import (
 	"net/smtp"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -78,6 +79,46 @@ func runMonthlyTaskIfDue() {
 	requests, cost := buildMonthlySummary(lastMonth)
 	if err := sendMonthlySummaryEmail(lastMonth, requests, cost); err != nil {
 		log.Printf("scheduler: monthly summary email: %v", err)
+		recordTask("monthly_email", "failed: "+err.Error())
+		return
+	}
+	recordTask("monthly_email", fmt.Sprintf("month=%s requests=%d cost=%d", lastMonth, requests, cost))
+}
+
+// recordTask 记录一次调度任务运行结果到 KV "task.<seq>"，最多保留 50 条
+func recordTask(name, result string) {
+	seq := 1
+	if raw, ok := model.KVGet("task.seq"); ok {
+		if n, err := strconv.Atoi(raw); err == nil {
+			seq = n + 1
+		}
+	}
+	rec := map[string]string{
+		"time":   time.Now().Format(time.RFC3339),
+		"name":   name,
+		"result": result,
+	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return
+	}
+	_ = model.KVSet(fmt.Sprintf("task.%d", seq), string(b))
+	_ = model.KVSet("task.seq", strconv.Itoa(seq))
+
+	// 超过 50 条时删除 seq 最小的旧记录
+	if len(model.KVGetAll("task.")) > 50 {
+		smallest := 0
+		for suffix := range model.KVGetAll("task.") {
+			if suffix == "seq" {
+				continue
+			}
+			if n, err := strconv.Atoi(suffix); err == nil && (smallest == 0 || n < smallest) {
+				smallest = n
+			}
+		}
+		if smallest > 0 {
+			_ = model.KVDel(fmt.Sprintf("task.%d", smallest))
+		}
 	}
 }
 
@@ -94,6 +135,7 @@ func findPlan(name string) (model.Plan, bool) {
 // subDailyGrant 订阅每日额度发放：对每个未过期订阅，按套餐额度再次发放
 func subDailyGrant() {
 	subs := model.KVGetAll("sub.")
+	granted := 0
 	for username, v := range subs {
 		var s model.Sub
 		if json.Unmarshal([]byte(v), &s) != nil || s.Plan == "" {
@@ -108,6 +150,7 @@ func subDailyGrant() {
 			continue
 		}
 		model.AddUserQuota(username, plan.Quota)
+		granted++
 		_ = model.AppendBilling(model.BillingEntry{
 			User:    username,
 			Type:    "subscribe",
@@ -116,6 +159,7 @@ func subDailyGrant() {
 			Remark:  plan.Name,
 		})
 	}
+	recordTask("subscription_grant", fmt.Sprintf("granted %d user(s)", granted))
 }
 
 // channelHealthPing 渠道健康探测：GET BaseURL+/v1/models，失败仅记录日志，不自动禁用
@@ -123,11 +167,13 @@ func channelHealthPing() {
 	channels, err := model.GetAllChannels()
 	if err != nil {
 		log.Printf("scheduler: load channels: %v", err)
+		recordTask("channel_health_ping", "failed: "+err.Error())
 		return
 	}
 	for _, c := range channels {
 		probeChannelHealth(c)
 	}
+	recordTask("channel_health_ping", fmt.Sprintf("probed %d channel(s)", len(channels)))
 }
 
 // probeChannelHealth 对单条渠道执行轻量健康探测（5s 超时，取首个上游密钥）
@@ -166,6 +212,7 @@ func statsSnapshot() {
 		if !os.IsNotExist(err) {
 			log.Printf("scheduler: open access.log: %v", err)
 		}
+		recordTask("stats_snapshot", "failed: no access.log")
 		return
 	}
 	defer f.Close()
@@ -212,6 +259,7 @@ func statsSnapshot() {
 		return
 	}
 	_ = model.KVSet("snapshot.daily", string(b))
+	recordTask("stats_snapshot", fmt.Sprintf("requests=%d cost=%.4f", requests, cost))
 }
 
 // tokenExpiryReminder 令牌到期提醒：对 3 天内过期且尚未提醒过的令牌，向归属用户发邮件

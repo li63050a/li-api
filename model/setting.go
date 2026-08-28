@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 
 	"api-gateway/db"
@@ -210,6 +211,11 @@ func ModelCost(modelName string, prompt, completion int64) int64 {
 	s := GetSetting()
 	if s.Mode != "biz" {
 		return prompt + completion
+	}
+	if v, ok := KVGet("fixedprice." + modelName); ok {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
 	}
 	r := s.ModelRatio[modelName]
 	if r <= 0 {

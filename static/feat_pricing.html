@@ -22,12 +22,45 @@
       <tbody id="priceBody"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
     </table>
   </div>
+
+  <div class="card">
+    <h3>固定价格</h3>
+    <p class="hint">固定价格优先于比率计费：命中该模型时直接按固定价格计费（0 表示不启用）。</p>
+    <div class="form-group">
+      <input id="fpModel" placeholder="模型名">
+      <input id="fpFixed" type="number" step="any" placeholder="固定价格">
+      <button class="btn btn-success" onclick="addFixedPrice()">添加</button>
+      <span id="fpMsg" class="msg"></span>
+    </div>
+    <table>
+      <thead><tr><th>模型</th><th>固定价格</th><th>操作</th></tr></thead>
+      <tbody id="fixedBody"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>价格矩阵（倍率 × 虚拟模型）</h3>
+    <p class="hint">合计倍率 = 基础模型倍率 × 虚拟模型倍率，反映用户最终计费。</p>
+    <table>
+      <thead><tr><th>展示名</th><th>类型</th><th>上游模型</th><th>基础倍率</th><th>虚拟倍率</th><th>合计倍率</th><th>完成倍率</th></tr></thead>
+      <tbody id="matrixBody"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
+let fixedPrices = [];
+let priceData = null;
+
 function pick(x, keys, def) {
   for (const k of keys) { if (x[k] != null) return x[k]; }
   return def;
+}
+
+function fmtNum(n) {
+  const x = +n;
+  if (!isFinite(x)) return String(n);
+  return String(x.toFixed(6)).replace(/\.?0+$/, '');
 }
 
 async function loadPricing() {
@@ -37,27 +70,158 @@ async function loadPricing() {
     const r = await api('/api/pricing');
     if (!r.ok) {
       body.innerHTML = '<tr><td colspan="3" class="muted">获取失败（' + r.status + '）</td></tr>';
-      return;
+    } else {
+      const d = await r.json();
+      const list = d.pricing || d.models || d.list || (Array.isArray(d) ? d : []);
+      if (list.length === 0) {
+        body.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
+      } else {
+        body.innerHTML = list.map(m => {
+          const model = escapeHtml(String(pick(m, ['model', 'name'], '-')));
+          const ratio = escapeHtml(String(pick(m, ['ratio', 'price', 'rate'], '-')));
+          const comp = escapeHtml(String(pick(m, ['completion_ratio', 'completion', 'completion_rate'], '-')));
+          return `<tr>
+            <td>${model}</td>
+            <td>${ratio}</td>
+            <td>${comp}</td>
+          </tr>`;
+        }).join('');
+      }
     }
-    const d = await r.json();
-    const list = d.pricing || d.models || d.list || (Array.isArray(d) ? d : []);
-    if (list.length === 0) {
-      body.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
-      return;
-    }
-    body.innerHTML = list.map(m => {
-      const model = escapeHtml(String(pick(m, ['model', 'name'], '-')));
-      const ratio = escapeHtml(String(pick(m, ['ratio', 'price', 'rate'], '-')));
-      const comp = escapeHtml(String(pick(m, ['completion_ratio', 'completion', 'completion_rate'], '-')));
-      return `<tr>
-        <td>${model}</td>
-        <td>${ratio}</td>
-        <td>${comp}</td>
-      </tr>`;
-    }).join('');
   } catch (e) {
     body.innerHTML = '<tr><td colspan="3" class="muted">请求失败</td></tr>';
   }
+  await loadPrices();
+}
+
+function fpMsg(t, ok) {
+  const el = $('fpMsg');
+  el.textContent = t;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+async function loadPrices() {
+  const fb = $('fixedBody');
+  const mb = $('matrixBody');
+  fb.innerHTML = '<tr><td colspan="3" class="muted">加载中…</td></tr>';
+  mb.innerHTML = '<tr><td colspan="7" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/prices');
+    if (!r.ok) {
+      fb.innerHTML = '<tr><td colspan="3" class="muted">获取失败（' + r.status + '）</td></tr>';
+      mb.innerHTML = '<tr><td colspan="7" class="muted">获取失败（' + r.status + '）</td></tr>';
+      return;
+    }
+    const d = await r.json();
+    priceData = d;
+    fixedPrices = Array.isArray(d) ? d : (d.fixed_prices || d.fixed || d.fixedPrices || d.fixedprice || []);
+    renderFixed();
+    renderMatrix();
+  } catch (e) {
+    fb.innerHTML = '<tr><td colspan="3" class="muted">请求失败</td></tr>';
+    mb.innerHTML = '<tr><td colspan="7" class="muted">请求失败</td></tr>';
+  }
+}
+
+function renderFixed() {
+  const fb = $('fixedBody');
+  if (!fixedPrices.length) {
+    fb.innerHTML = '<tr><td colspan="3" class="muted">暂无固定价格</td></tr>';
+    return;
+  }
+  fb.innerHTML = fixedPrices.map(function (p, i) {
+    const model = escapeHtml(String(p.model != null ? p.model : (p.name || '-')));
+    const fixed = p.fixed != null ? p.fixed : p.price;
+    return '<tr><td><code>' + model + '</code></td><td>' + escapeHtml(String(fixed)) + '</td>' +
+      '<td><button class="btn btn-danger" onclick="delFixed(' + i + ')">删除</button></td></tr>';
+  }).join('');
+}
+
+async function addFixedPrice() {
+  const model = v('fpModel').trim();
+  const fixed = parseFloat(v('fpFixed'));
+  if (!model) { fpMsg('请填写模型名', false); return; }
+  if (isNaN(fixed)) { fpMsg('请填写固定价格', false); return; }
+  try {
+    const r = await api('/admin/prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: model, fixed: fixed })
+    });
+    if (!r.ok) { fpMsg('添加失败：' + r.status + ' ' + (await r.text().catch(() => '')), false); return; }
+    fpMsg('已添加', true);
+    $('fpModel').value = '';
+    $('fpFixed').value = '';
+    await loadPrices();
+  } catch (e) { fpMsg('添加出错：' + e, false); }
+}
+
+async function delFixed(i) {
+  const p = fixedPrices[i];
+  const model = p && (p.model != null ? p.model : p.name);
+  if (model == null) { fpMsg('缺少模型名', false); return; }
+  if (!confirm('确认删除固定价格 ' + model + ' ？')) return;
+  try {
+    const r = await api('/admin/prices?model=' + encodeURIComponent(model), { method: 'DELETE' });
+    if (!r.ok) { fpMsg('删除失败：' + r.status, false); return; }
+    fpMsg('已删除', true);
+    await loadPrices();
+  } catch (e) { fpMsg('删除出错：' + e, false); }
+}
+
+function renderMatrix() {
+  const mb = $('matrixBody');
+  const d = priceData || {};
+  const ratios = d.ratios || d.model_prices || d.prices || d.ratio_map || {};
+  const vmodels = d.vmodels || d.virtual_models || d.vm || [];
+  const rows = [];
+
+  function baseRatio(m) {
+    const r = ratios[m];
+    if (r == null) return null;
+    if (typeof r === 'number') return r;
+    if (typeof r === 'object') {
+      const n = (r.ratio != null ? r.ratio : r.price) || r.value;
+      return n != null ? (+n) : null;
+    }
+    const n = parseFloat(r);
+    return isNaN(n) ? null : n;
+  }
+
+  if (ratios && typeof ratios === 'object' && !Array.isArray(ratios)) {
+    Object.keys(ratios).forEach(function (m) {
+      const b = baseRatio(m);
+      if (b != null) rows.push({ model: m, type: 'base', upstream: '-', base: b, vm: 1, total: b, cr: b });
+    });
+  }
+  if (Array.isArray(vmodels)) {
+    vmodels.forEach(function (vm) {
+      const display = vm.display || vm.name || vm.model || '?';
+      const upstream = vm.upstream || vm.target || vm.base || '';
+      const vr = parseFloat(vm.ratio) || 1;
+      const cr = vm.completion_ratio != null ? parseFloat(vm.completion_ratio) || vr : vr;
+      const b = baseRatio(upstream);
+      const base = b != null ? b : 1;
+      rows.push({ model: display, type: 'vmodel', upstream: upstream, base: base, vm: vr, total: base * vr, cr: cr });
+    });
+  }
+
+  if (!rows.length) {
+    mb.innerHTML = '<tr><td colspan="7" class="muted">暂无价格数据</td></tr>';
+    return;
+  }
+  rows.sort(function (a, b) { return String(a.model).localeCompare(String(b.model)); });
+  mb.innerHTML = rows.map(function (r) {
+    const typeHtml = r.type === 'vmodel' ? '<span class="type-tag">虚拟</span>' : '<span class="type-tag">基础</span>';
+    const upstreamHtml = (r.upstream && r.upstream !== '-') ? '<code>' + escapeHtml(r.upstream) + '</code>' : '-';
+    return '<tr><td><code>' + escapeHtml(r.model) + '</code></td>' +
+      '<td>' + typeHtml + '</td>' +
+      '<td>' + upstreamHtml + '</td>' +
+      '<td>' + fmtNum(r.base) + '</td>' +
+      '<td>' + (r.type === 'vmodel' ? fmtNum(r.vm) : '-') + '</td>' +
+      '<td><b>' + fmtNum(r.total) + '</b></td>' +
+      '<td>' + fmtNum(r.cr) + '</td></tr>';
+  }).join('');
 }
 
 (async () => {

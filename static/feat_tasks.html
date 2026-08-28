@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系统任务</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>系统任务</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadTasks()">刷新</button>
+      <button class="btn btn-danger" onclick="clearTasks()">清空</button>
+    </div>
+  </div>
+  <p class="hint">展示后台定时/一次性任务的历史执行记录。清空会删除全部记录。</p>
+
+  <div class="card">
+    <h3>任务执行记录</h3>
+    <table>
+      <thead><tr><th>时间</th><th>任务</th><th>结果</th></tr></thead>
+      <tbody id="taskBody"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let tasks = [];
+
+function taskResultCell(t) {
+  const ok = t.status === 'ok' || t.status === 'success' || t.status === 'done' || t.status === 'running' ? false : (t.success === true || (t.status !== 'error' && t.status !== 'failed' && !t.error));
+  const fail = t.status === 'error' || t.status === 'failed' || t.success === false || !!t.error;
+  const result = t.result || t.message || t.output || t.detail || t.info || '';
+  let html = '';
+  if (fail) html += '<span class="status status-off">失败</span> ';
+  else if (t.status === 'running') html += '<span class="status" style="background:var(--tag-orange-bg);color:var(--tag-orange-fg)">运行中</span> ';
+  else if (ok) html += '<span class="status status-on">成功</span> ';
+  html += escapeHtml(String(result));
+  return html;
+}
+
+async function loadTasks() {
+  const body = $('taskBody');
+  body.innerHTML = '<tr><td colspan="3" class="muted">加载中…</td></tr>';
+  try {
+    const res = await api('/api/tasks');
+    if (!res.ok) { body.innerHTML = '<tr><td colspan="3" class="msg">加载失败（' + res.status + '）</td></tr>'; return; }
+    const d = await res.json();
+    tasks = Array.isArray(d) ? d : (d.tasks || d.list || d.data || d.records || []);
+    renderTasks();
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="3" class="msg">请求出错</td></tr>';
+  }
+}
+
+function renderTasks() {
+  const body = $('taskBody');
+  if (!tasks.length) {
+    body.innerHTML = '<tr><td colspan="3" class="muted">暂无任务记录</td></tr>';
+    return;
+  }
+  body.innerHTML = tasks.map(function (t) {
+    const time = fmtTime(t.time || t.created_at || t.createdAt || t.timestamp || t.run_at || '');
+    const name = escapeHtml(t.name || t.task || t.title || t.type || '-');
+    return '<tr><td class="small">' + time + '</td><td>' + name + '</td><td>' + taskResultCell(t) + '</td></tr>';
+  }).join('');
+}
+
+async function clearTasks() {
+  if (!confirm('确认清空全部任务记录？')) return;
+  try {
+    const res = await api('/api/tasks', { method: 'DELETE' });
+    if (!res.ok) { alert('清空失败：' + res.status + ' ' + (await res.text().catch(function () { return ''; }))); return; }
+    await loadTasks();
+  } catch (e) { alert('清空失败：' + e); }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadTasks();
+})();
+</script>
+</body>
+</html>

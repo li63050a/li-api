@@ -106,7 +106,7 @@ func Migrate() error {
 		`CREATE TABLE IF NOT EXISTS channels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT, type TEXT, base_url TEXT, keys TEXT, auth_type TEXT, auth_key TEXT,
-			models TEXT, model_mapping TEXT, azure_api_version TEXT, grp TEXT, priority INTEGER, weight INTEGER,
+			models TEXT, model_mapping TEXT, azure_api_version TEXT, grp TEXT, tags TEXT, priority INTEGER, weight INTEGER,
 			rate_limit INTEGER, status INTEGER, created_at TEXT, updated_at TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
@@ -204,6 +204,7 @@ func Migrate() error {
 	}
 	if err := ensureCols("channels", map[string]string{
 		"azure_api_version": "TEXT",
+		"tags":              "TEXT",
 	}); err != nil {
 		return err
 	}
