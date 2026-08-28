@@ -107,6 +107,14 @@ func ResolveRedirect(name string) string {
 	return name
 }
 
+// applyVModelCost 套用虚拟模型价格：命中虚拟模型时按展示名倍率计费（biz 模式），否则走 ModelCost
+func applyVModelCost(vm *model.VModel, modelName string, cost int64) int64 {
+	if vm != nil {
+		return maxInt64(1, int64(float64(cost)*vm.Ratio))
+	}
+	return model.ModelCost(modelName, cost, 0)
+}
+
 // ipAllowed 判断 IP 是否在允许列表内（支持单 IP 与 CIDR）
 func ipAllowed(ip, allowed string) bool {
 	addr := net.ParseIP(strings.TrimSpace(ip))
@@ -257,10 +265,18 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 令牌级模型白名单校验（全局重定向与别名先解析为真实模型）
-	modelName = ResolveRedirect(modelName)
-	modelName = ResolveModel(modelName)
-	if !model.TokenModelAllowed(tok.Models, modelName) {
+	// 令牌级模型白名单校验（虚拟模型展示名 / 全局重定向 / 别名先解析为真实模型）
+	var vmodel *model.VModel
+	displayName := modelName
+	if vm, ok := model.GetVModel(modelName); ok {
+		v := vm
+		vmodel = &v
+		modelName = vm.Upstream
+	} else {
+		modelName = ResolveRedirect(modelName)
+		modelName = ResolveModel(modelName)
+	}
+	if !model.TokenModelAllowed(tok.Models, displayName) {
 		writeError(w, http.StatusForbidden, "Model not allowed for this token", "invalid_request_error")
 		return
 	}
@@ -301,7 +317,7 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 			prompt = maxInt64(1, cw.bytes/4)
 		}
 		cost := maxInt64(1, prompt+comp)
-		cost = model.ModelCost(modelName, cost, 0)
+		cost = applyVModelCost(vmodel, modelName, cost)
 		_ = model.UseToken(key, cost)
 		model.AddUserUsed(tok.Owner, cost)
 		recordStats(cost)
@@ -356,9 +372,9 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(respStatus)
 	_, _ = w.Write(respBody)
 
-	// 计费：按端点类型从 usage / 字节数估算 token 基数（倍率在 ModelCost 中套用）
+	// 计费：按端点类型从 usage / 字节数估算 token 基数（虚拟模型倍率或 ModelCost 套用）
 	cost := relayEndpointCost(r.URL.Path, bodyBuf, respBody, modelName, "normal")
-	cost = model.ModelCost(modelName, cost, 0)
+	cost = applyVModelCost(vmodel, modelName, cost)
 	_ = model.UseToken(key, cost)
 	model.AddUserUsed(tok.Owner, cost)
 	recordStats(cost)
@@ -568,6 +584,12 @@ func serveModels(w http.ResponseWriter, group string) {
 	for name := range model.KVGetAll("alias.") {
 		if name = strings.TrimSpace(name); name != "" {
 			set[name] = true
+		}
+	}
+	// 追加虚拟模型展示名（用户可直接调用）
+	for _, vm := range model.GetVModels() {
+		if vm.Display != "" {
+			set[vm.Display] = true
 		}
 	}
 	data := make([]map[string]string, 0, len(set))

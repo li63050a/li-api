@@ -19,7 +19,7 @@ import (
 var staticFS embed.FS
 
 // Version 当前版本号（按 0.0.x 依次递增）
-const Version = "0.0.1.4"
+const Version = "0.0.1.5"
 
 func main() {
 	log.Println("api-gateway", Version, "starting ...")

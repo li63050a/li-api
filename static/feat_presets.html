@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>聊天预设</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>聊天预设</h2>
+    <button class="btn btn-primary" onclick="loadPresets()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>新增预设</h3>
+    <div class="form-group">
+      <input id="pName" placeholder="预设名称">
+      <input id="pModel" placeholder="模型名称 model">
+    </div>
+    <div class="form-group">
+      <textarea id="pSystem" rows="2" placeholder="系统提示 system（可选）"></textarea>
+    </div>
+    <div class="form-group">
+      <textarea id="pPrompt" rows="4" placeholder="提示词 prompt（可选）"></textarea>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="addPreset()">添加</button>
+      <span id="pMsg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>预设列表</h3>
+    <table>
+      <thead><tr><th>名称</th><th>模型</th><th>系统提示</th><th>提示词</th><th>操作</th></tr></thead>
+      <tbody id="presetBody"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function pick(x, keys, def) {
+  for (const k of keys) { if (x[k] != null) return x[k]; }
+  return def;
+}
+
+async function loadPresets() {
+  const body = $('presetBody');
+  body.innerHTML = '<tr><td colspan="5" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/presets');
+    if (!r.ok) {
+      body.innerHTML = '<tr><td colspan="5" class="muted">获取失败（' + r.status + '）</td></tr>';
+      return;
+    }
+    const d = await r.json();
+    const list = d.presets || (Array.isArray(d) ? d : []);
+    if (list.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" class="muted">暂无预设</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(p => {
+      const name = String(pick(p, ['name'], '-'));
+      return `<tr>
+        <td><b>${escapeHtml(name)}</b></td>
+        <td>${escapeHtml(pick(p, ['model'], '-'))}</td>
+        <td>${escapeHtml(pick(p, ['system'], ''))}</td>
+        <td>${escapeHtml(pick(p, ['prompt'], ''))}</td>
+        <td><button class="btn btn-danger" onclick="delPreset('${escapeHtml(name)}')">删除</button></td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="5" class="muted">请求失败</td></tr>';
+  }
+}
+
+async function addPreset() {
+  const msg = $('pMsg');
+  msg.textContent = '';
+  const name = v('pName').trim();
+  const model = v('pModel').trim();
+  if (!name) { msg.textContent = '请填写预设名称'; return; }
+  if (!model) { msg.textContent = '请填写模型名称'; return; }
+  const body = {
+    name: name,
+    model: model,
+    system: v('pSystem'),
+    prompt: v('pPrompt')
+  };
+  msg.textContent = '提交中…';
+  try {
+    const r = await api('/api/presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.success) {
+      msg.textContent = '添加失败：' + (d.error || d.message || r.status);
+      return;
+    }
+    msg.textContent = '已添加';
+    $('pName').value = '';
+    $('pModel').value = '';
+    $('pSystem').value = '';
+    $('pPrompt').value = '';
+    await loadPresets();
+  } catch (e) {
+    msg.textContent = '请求失败';
+  }
+}
+
+async function delPreset(name) {
+  if (!confirm('确认删除预设「' + name + '」？')) return;
+  try {
+    const r = await api('/api/presets?name=' + encodeURIComponent(name), { method: 'DELETE' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok && !d.success) { alert('删除失败：' + (d.error || r.status)); }
+    await loadPresets();
+  } catch (e) {
+    alert('删除失败');
+  }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadPresets();
+})();
+</script>
+</body>
+</html>

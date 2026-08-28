@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>定价页</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>定价页</h2>
+    <button class="btn btn-primary" onclick="loadPricing()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>模型定价</h3>
+    <p class="hint">比率 × 原始 token 数 = 计费额度</p>
+    <table>
+      <thead><tr><th>模型</th><th>比率（ratio）</th><th>完成比率（completion_ratio）</th></tr></thead>
+      <tbody id="priceBody"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function pick(x, keys, def) {
+  for (const k of keys) { if (x[k] != null) return x[k]; }
+  return def;
+}
+
+async function loadPricing() {
+  const body = $('priceBody');
+  body.innerHTML = '<tr><td colspan="3" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/pricing');
+    if (!r.ok) {
+      body.innerHTML = '<tr><td colspan="3" class="muted">获取失败（' + r.status + '）</td></tr>';
+      return;
+    }
+    const d = await r.json();
+    const list = d.pricing || d.models || d.list || (Array.isArray(d) ? d : []);
+    if (list.length === 0) {
+      body.innerHTML = '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(m => {
+      const model = escapeHtml(String(pick(m, ['model', 'name'], '-')));
+      const ratio = escapeHtml(String(pick(m, ['ratio', 'price', 'rate'], '-')));
+      const comp = escapeHtml(String(pick(m, ['completion_ratio', 'completion', 'completion_rate'], '-')));
+      return `<tr>
+        <td>${model}</td>
+        <td>${ratio}</td>
+        <td>${comp}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="3" class="muted">请求失败</td></tr>';
+  }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadPricing();
+})();
+</script>
+</body>
+</html>

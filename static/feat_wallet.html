@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>钱包</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>钱包</h2>
+    <button class="btn btn-primary" onclick="loadWallet()">刷新</button>
+  </div>
+
+  <div class="stat-cards">
+    <div class="stat-card"><div class="stat-title">余额</div><div class="stat-value" id="balRemain">—</div></div>
+    <div class="stat-card"><div class="stat-title">总额度</div><div class="stat-value" id="balQuota">—</div></div>
+    <div class="stat-card"><div class="stat-title">已用</div><div class="stat-value" id="balUsed">—</div></div>
+  </div>
+
+  <div class="card">
+    <h3>充值</h3>
+    <div class="form-group">
+      <input id="amount" type="number" min="0" step="1" placeholder="充值金额（USD）">
+      <select id="gateway">
+        <option value="mock">Mock（模拟）</option>
+        <option value="stripe">Stripe</option>
+        <option value="epay">Epay（易支付）</option>
+        <option value="pancake">Pancake</option>
+      </select>
+      <button class="btn btn-primary" onclick="createOrder()">去支付</button>
+      <span id="payMsg" class="msg"></span>
+    </div>
+    <div id="payResult" style="display:none">
+      <p class="small">支付链接（点击打开，可复制）：</p>
+      <div class="form-group">
+        <input id="payUrl" readonly>
+        <button class="btn btn-dark" onclick="copyPayUrl()">复制</button>
+        <a class="btn btn-success" id="payLink" href="#" target="_blank" rel="noopener">打开支付页</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>充值订单</h3>
+    <table>
+      <thead><tr><th>订单号</th><th>金额</th><th>网关</th><th>状态</th><th>时间</th></tr></thead>
+      <tbody id="orderBody"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function statusHtml(s) {
+  const st = String(s == null ? '' : s).toLowerCase();
+  if (['paid', 'success', 'succeeded', 'completed', 'successful', '1', '已支付', '已完成'].indexOf(st) >= 0) {
+    return '<span class="status status-on">已支付</span>';
+  }
+  if (['pending', 'created', 'processing', 'unpaid', '2', '待支付', '处理中'].indexOf(st) >= 0) {
+    return '<span class="status status-off">待支付</span>';
+  }
+  if (['failed', 'canceled', 'cancelled', 'expired', '3', '失败', '已取消', '已过期'].indexOf(st) >= 0) {
+    return '<span class="status status-off">失败</span>';
+  }
+  return '<span class="type-tag">' + escapeHtml(s) + '</span>';
+}
+
+function pick(x, keys, def) {
+  for (const k of keys) { if (x[k] != null) return x[k]; }
+  return def;
+}
+
+async function loadWallet() {
+  $('balRemain').textContent = '—';
+  $('balQuota').textContent = '—';
+  $('balUsed').textContent = '—';
+  $('orderBody').innerHTML = '<tr><td colspan="5" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/wallet');
+    if (!r.ok) {
+      $('balRemain').textContent = '获取失败';
+      $('orderBody').innerHTML = '<tr><td colspan="5" class="muted">获取失败（' + r.status + '）</td></tr>';
+      return;
+    }
+    const d = await r.json();
+    const w = d.wallet || d;
+    const quota = Number(pick(w, ['quota', 'total', 'total_quota'], 0));
+    const used = Number(pick(w, ['used', 'used_quota'], 0));
+    const remaining = w.remaining != null ? Number(w.remaining) : (quota < 0 ? -1 : quota - used);
+    $('balQuota').textContent = quota < 0 ? '不限' : quota.toLocaleString();
+    $('balUsed').textContent = used.toLocaleString();
+    $('balRemain').textContent = remaining < 0 ? '不限' : remaining.toLocaleString();
+
+    const list = d.orders || d.list || [];
+    const body = $('orderBody');
+    if (list.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" class="muted">暂无订单</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(o => `<tr>
+      <td><code>${escapeHtml(String(pick(o, ['id', 'order_id', 'order_no'], '-'))) }</code></td>
+      <td>${Number(pick(o, ['amount', 'price'], 0)).toLocaleString()}</td>
+      <td><span class="type-tag">${escapeHtml(pick(o, ['gateway', 'channel'], '-'))}</span></td>
+      <td>${statusHtml(pick(o, ['status', 'state'], ''))}</td>
+      <td style="white-space:nowrap">${escapeHtml(fmtTime(pick(o, ['time', 'created_at', 'createdAt', 'create_time'], '')))}</td>
+    </tr>`).join('');
+  } catch (e) {
+    $('balRemain').textContent = '获取失败';
+    $('orderBody').innerHTML = '<tr><td colspan="5" class="muted">请求失败</td></tr>';
+  }
+}
+
+async function createOrder() {
+  const msg = $('payMsg');
+  msg.textContent = '';
+  const amount = Number(v('amount'));
+  const gateway = v('gateway');
+  if (!amount || amount <= 0) { msg.textContent = '请输入有效金额'; return; }
+  $('payResult').style.display = 'none';
+  msg.textContent = '提交中…';
+  try {
+    const r = await api('/api/pay/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: amount, gateway: gateway })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      msg.textContent = '下单失败：' + (d.error || d.message || r.status);
+      return;
+    }
+    const payUrl = d.pay_url || (d.data && d.data.pay_url) || d.url || '';
+    msg.textContent = '';
+    if (payUrl) {
+      $('payUrl').value = payUrl;
+      $('payLink').href = payUrl;
+      $('payResult').style.display = '';
+    } else {
+      msg.textContent = '下单成功，但未返回支付链接';
+    }
+    loadWallet();
+  } catch (e) {
+    msg.textContent = '请求失败';
+  }
+}
+
+function copyPayUrl() {
+  const url = $('payUrl').value;
+  if (!url) return;
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject(new Error('no clipboard')))
+    .then(() => alert('已复制支付链接'))
+    .catch(() => alert('复制失败，请手动复制'));
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadWallet();
+})();
+</script>
+</body>
+</html>

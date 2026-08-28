@@ -31,6 +31,26 @@
     <h3>健康检查 /healthz</h3>
     <pre class="preview" id="healthBody">加载中…</pre>
   </div>
+
+  <div class="card">
+    <h3>性能监控</h3>
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-title">CPU 负载</div><div class="stat-value" id="pfCpu">—</div></div>
+      <div class="stat-card"><div class="stat-title">内存使用率</div><div class="stat-value" id="pfMem">—</div></div>
+      <div class="stat-card"><div class="stat-title">Goroutines</div><div class="stat-value" id="pfGor">—</div></div>
+    </div>
+    <h3>告警配置</h3>
+    <div class="form-group">
+      <label><input type="checkbox" id="perfEnabled"> 启用</label>
+      <span class="hint" style="margin:0">CPU 负载或内存使用率超阈值时触发告警</span>
+    </div>
+    <div class="form-group">
+      <input id="perfMaxLoad" type="number" step="0.1" placeholder="CPU 负载阈值 max_load">
+      <input id="perfMaxMem" type="number" step="1" placeholder="内存使用率阈值 % max_mem_pct">
+      <button class="btn btn-primary" onclick="savePerf()">保存</button>
+      <span id="perfMsg" class="msg"></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -79,6 +99,69 @@ function loadAll() {
   loadHealth();
   loadMetrics();
   loadStats();
+  loadPerf();
+  loadPerfConfig();
+}
+
+async function loadPerf() {
+  try {
+    const r = await api('/api/ops/perf');
+    if (!r.ok) {
+      $('pfCpu').textContent = 'N/A';
+      $('pfMem').textContent = 'N/A';
+      $('pfGor').textContent = 'N/A';
+      return;
+    }
+    const d = await r.json();
+    $('pfCpu').textContent = d.cpu_load != null ? d.cpu_load
+      : (d.cpu != null ? d.cpu : (d.load != null ? d.load : '—'));
+    const mem = d.mem_pct != null ? d.mem_pct
+      : (d.memory_pct != null ? d.memory_pct : (d.memory != null ? d.memory : null));
+    $('pfMem').textContent = mem != null ? mem + '%' : '—';
+    $('pfGor').textContent = d.goroutines != null ? d.goroutines
+      : (d.goroutine != null ? d.goroutine : '—');
+  } catch (e) { /* ignore */ }
+}
+
+async function loadPerfConfig() {
+  try {
+    const r = await api('/api/setting/perf');
+    if (!r.ok) return;
+    const d = await r.json();
+    const c = d.perf || d.settings || d;
+    $('perfEnabled').checked = !!c.enabled;
+    if (c.max_load != null) $('perfMaxLoad').value = c.max_load;
+    if (c.max_mem_pct != null) $('perfMaxMem').value = c.max_mem_pct;
+  } catch (e) { /* ignore */ }
+}
+
+async function savePerf() {
+  const msg = $('perfMsg');
+  msg.textContent = '保存中…';
+  msg.style.color = 'var(--fg-2)';
+  const body = {
+    enabled: $('perfEnabled').checked,
+    max_load: Number(v('perfMaxLoad')) || 0,
+    max_mem_pct: Number(v('perfMaxMem')) || 0
+  };
+  try {
+    const r = await api('/api/setting/perf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      msg.textContent = '已保存';
+      msg.style.color = 'var(--success)';
+    } else {
+      msg.textContent = '保存失败：' + (d.error || d.message || r.status);
+      msg.style.color = 'var(--danger)';
+    }
+  } catch (e) {
+    msg.textContent = '请求失败';
+    msg.style.color = 'var(--danger)';
+  }
 }
 
 (async () => {

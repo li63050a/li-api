@@ -31,7 +31,15 @@
 
   <div class="card">
     <div class="form-group">
+      <select id="preset" onchange="applyPreset()">
+        <option value="">— 选择预设 —</option>
+      </select>
+    </div>
+    <div class="form-group">
       <input id="model" placeholder="模型名称 model">
+    </div>
+    <div class="form-group">
+      <textarea id="system" rows="2" placeholder="系统提示 system（可选）"></textarea>
     </div>
     <div class="form-group">
       <textarea id="messages" rows="4" placeholder="输入消息，每行一条 user 消息"></textarea>
@@ -49,6 +57,29 @@
 </div>
 
 <script>
+let presets = [];
+
+async function loadPresets() {
+  try {
+    const r = await api('/api/presets');
+    if (!r.ok) return;
+    const d = await r.json();
+    presets = d.presets || (Array.isArray(d) ? d : []);
+    const sel = $('preset');
+    sel.innerHTML = '<option value="">— 选择预设 —</option>' +
+      presets.map(p => '<option value="' + escapeHtml(p.name || '') + '">' + escapeHtml(p.name || '') + '</option>').join('');
+  } catch (e) { /* ignore */ }
+}
+
+function applyPreset() {
+  const name = v('preset');
+  const p = presets.find(x => x.name === name);
+  if (!p) return;
+  $('model').value = p.model || '';
+  $('system').value = p.system || '';
+  $('messages').value = p.prompt || '';
+}
+
 function extractContent(d) {
   if (d && Array.isArray(d.choices) && d.choices[0] &&
       d.choices[0].message && d.choices[0].message.content) {
@@ -63,13 +94,19 @@ async function sendChat() {
   msg.textContent = '';
   const model = v('model').trim();
   if (!model) { msg.textContent = '请填写模型名称'; return; }
+  const sys = v('system').trim();
   const text = v('messages');
-  const messages = text.split('\n').map(s => s.trim()).filter(Boolean)
-    .map(content => ({ role: 'user', content: content }));
+  const messages = [];
+  if (sys) messages.push({ role: 'system', content: sys });
+  text.split('\n').map(s => s.trim()).filter(Boolean)
+    .forEach(content => messages.push({ role: 'user', content: content }));
   if (messages.length === 0) { msg.textContent = '请输入至少一条消息'; return; }
 
   const old = conv.innerHTML === '尚未发送请求。' ? '' : conv.innerHTML;
-  const newBubbles = messages.map(m =>
+  const sysBubble = sys
+    ? '<div class="chat-line"><div class="chat-label">系统</div><div class="chat-bubble chat-assistant">' + escapeHtml(sys) + '</div></div>'
+    : '';
+  const newBubbles = sysBubble + messages.filter(m => m.role === 'user').map(m =>
     '<div class="chat-line"><div class="chat-label">用户</div><div class="chat-bubble chat-user">' + escapeHtml(m.content) + '</div></div>'
   ).join('') + '<div class="chat-line"><div class="chat-label">助手</div><div class="chat-bubble chat-assistant" id="assistBox">回复中…</div></div>';
   conv.innerHTML = old + newBubbles;
@@ -97,6 +134,7 @@ async function sendChat() {
 
 (async () => {
   try { await ensureAuth(); } catch (e) { return; }
+  await loadPresets();
 })();
 </script>
 </body>

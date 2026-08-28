@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>虚拟模型</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>虚拟模型（展示名伪装）</h2>
+    <button class="btn btn-primary" onclick="loadVModels()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>批量新增：多个展示名 → 同一个真实上游，价格自定义</h3>
+    <div class="form-group">
+      <input id="vmDisplay" placeholder="展示名（逗号分隔可一次挂多个），如 mygpt-pro,mygpt-ultra">
+      <input id="vmUpstream" placeholder="真实上游模型，如 gpt-4o-mini">
+      <input id="vmRatio" placeholder="价格倍率，如 5">
+      <input id="vmCRatio" placeholder="补全倍率（可留空，默认同倍率）">
+      <button class="btn btn-success" onclick="addVModels()">添加</button>
+      <span id="msg" class="msg"></span>
+    </div>
+    <p class="muted">例：把 3 个高级展示名全部指向 gpt-4o-mini，倍率设 5 —— 用户看到的是高级名，背后同一个模型，按你的倍率计费。</p>
+  </div>
+
+  <div class="card">
+    <h3>虚拟模型列表</h3>
+    <table>
+      <thead>
+        <tr><th>展示名</th><th>真实上游</th><th>价格倍率</th><th>补全倍率</th><th>操作</th></tr>
+      </thead>
+      <tbody id="vmBody">
+        <tr><td colspan="5" class="muted">加载中…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let vmList = [];
+
+function showMsg(text, ok) {
+  const el = $('msg');
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+async function loadVModels() {
+  try { await ensureAuth(); } catch (e) { return; }
+  const body = $('vmBody');
+  body.innerHTML = '<tr><td colspan="5" class="muted">加载中…</td></tr>';
+  const r = await api('/admin/vmodels');
+  if (!r.ok) { body.innerHTML = '<tr><td colspan="5" class="msg">加载失败</td></tr>'; return; }
+  const d = await r.json();
+  vmList = (d.vmodels || []).slice();
+  if (vmList.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" class="muted">暂无虚拟模型</td></tr>';
+    return;
+  }
+  body.innerHTML = vmList.map((vm, i) =>
+    `<tr>
+      <td><code>${escapeHtml(vm.display)}</code></td>
+      <td>${escapeHtml(vm.upstream)}</td>
+      <td>${vm.ratio}</td>
+      <td>${vm.completion_ratio}</td>
+      <td><button class="btn btn-danger" onclick="delVModel(${i})">删除</button></td>
+    </tr>`
+  ).join('');
+}
+
+async function addVModels() {
+  const display = v('vmDisplay').trim();
+  const upstream = v('vmUpstream').trim();
+  const ratio = parseFloat(v('vmRatio')) || 1;
+  const cratio = parseFloat(v('vmCRatio')) || 0;
+  if (!display || !upstream) { showMsg('请填写展示名和真实上游', false); return; }
+  const r = await api('/admin/vmodels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display, upstream, ratio, completion_ratio: cratio })
+  });
+  if (!r.ok) { showMsg('添加失败：' + r.status, false); return; }
+  const d = await r.json();
+  $('vmDisplay').value = '';
+  $('vmUpstream').value = '';
+  showMsg('已添加 ' + (d.created || 0) + ' 个虚拟模型', true);
+  await loadVModels();
+}
+
+async function delVModel(i) {
+  const name = vmList[i] && vmList[i].display;
+  if (!name) return;
+  if (!confirm('确认删除虚拟模型 ' + name + ' ？')) return;
+  const r = await api('/admin/vmodels?name=' + encodeURIComponent(name), { method: 'DELETE' });
+  if (!r.ok) { showMsg('删除失败：' + r.status, false); return; }
+  await loadVModels();
+}
+
+loadVModels();
+</script>
+</body>
+</html>

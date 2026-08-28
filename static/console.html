@@ -36,6 +36,14 @@
   </div>
 
   <div class="card">
+    <h3>每日签到</h3>
+    <div class="form-group">
+      <button class="btn btn-success" id="checkinBtn" onclick="checkin()">签到</button>
+      <span id="checkinMsg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
     <h3>使用趋势</h3>
     <div id="trendWrap" style="display:none"><canvas id="trendCanvas"></canvas></div>
     <div id="trendMsg" class="muted">加载中…</div>
@@ -133,6 +141,7 @@ async function loadAll() {
   } catch (e) { return; }
   $('tfUser').value = selfUser;
   await loadUsage();
+  await loadCheckin();
   await loadIplog();
   await loadTokens();
   await loadPlans();
@@ -182,6 +191,55 @@ async function loadUsage() {
   </div>
   <div class="ubar" style="margin-top:10px"><div class="ubar-fill" style="width:${pct}%"></div></div>`;
   drawTrend(d.trend || d.by_day || d.daily);
+}
+
+async function loadCheckin() {
+  const btn = $('checkinBtn');
+  const msg = $('checkinMsg');
+  try {
+    const r = await api('/api/user/checkin');
+    if (!r.ok) { msg.textContent = '签到信息获取失败（' + r.status + '）'; msg.style.color = 'var(--danger)'; return; }
+    const d = await r.json();
+    if (d.checked) {
+      btn.disabled = true;
+      btn.textContent = '今日已签到';
+      msg.textContent = '今日已签到，每日可得 ' + Number(d.quota || 0).toLocaleString() + ' 额度';
+      msg.style.color = 'var(--success)';
+    } else {
+      btn.disabled = false;
+      btn.textContent = '签到';
+      msg.textContent = '每日签到可得 ' + Number(d.quota || 0).toLocaleString() + ' 额度';
+      msg.style.color = 'var(--fg-2)';
+    }
+  } catch (e) {
+    msg.textContent = '签到信息获取失败';
+    msg.style.color = 'var(--danger)';
+  }
+}
+
+async function checkin() {
+  const btn = $('checkinBtn');
+  const msg = $('checkinMsg');
+  msg.textContent = '签到中…';
+  msg.style.color = 'var(--fg-2)';
+  try {
+    const r = await api('/api/user/checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.success) {
+      btn.disabled = true;
+      btn.textContent = '今日已签到';
+      msg.textContent = '签到成功，获得 ' + Number(d.quota || 0).toLocaleString() + ' 额度';
+      msg.style.color = 'var(--success)';
+      loadUsage();
+    } else {
+      msg.textContent = '签到失败：' + (d.error || d.message || r.status);
+      msg.style.color = 'var(--danger)';
+      if (r.status === 409) loadCheckin();
+    }
+  } catch (e) {
+    msg.textContent = '签到请求失败';
+    msg.style.color = 'var(--danger)';
+  }
 }
 
 function drawTrend(list) {

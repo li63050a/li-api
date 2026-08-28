@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>排行榜</title>
+  <link rel="stylesheet" href="/common.css">
+  <script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>排行榜</h2>
+    <button class="btn btn-primary" onclick="loadRankings()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>热门用户 Top10</h3>
+    <table>
+      <thead><tr><th>排名</th><th>用户 / 令牌</th><th>请求数</th><th>消耗</th></tr></thead>
+      <tbody id="rankUsers"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>热门模型 Top10</h3>
+    <table>
+      <thead><tr><th>排名</th><th>模型</th><th>请求数</th><th>消耗</th></tr></thead>
+      <tbody id="rankModels"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>热门渠道 Top10</h3>
+    <table>
+      <thead><tr><th>排名</th><th>渠道</th><th>请求数</th><th>消耗</th></tr></thead>
+      <tbody id="rankChannels"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function pick(x, keys, def) {
+  for (const k of keys) { if (x[k] != null) return x[k]; }
+  return def;
+}
+
+function renderRank(body, list, nameKeys, mask) {
+  if (!list || list.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="muted">暂无数据</td></tr>';
+    return;
+  }
+  body.innerHTML = list.slice(0, 10).map((x, i) => {
+    let n = String(pick(x, nameKeys, '-'));
+    if (mask) n = maskTok(n);
+    const reqs = Number(pick(x, ['requests', 'req_count', 'request_count', 'count', 'calls'], 0)).toLocaleString();
+    const cost = Number(pick(x, ['cost', 'amount', 'tokens', 'token', 'spend', 'quota'], 0)).toLocaleString();
+    return `<tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(n)}</td>
+      <td>${reqs}</td>
+      <td>${cost}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadRankings() {
+  const body = {
+    users: $('rankUsers'),
+    models: $('rankModels'),
+    channels: $('rankChannels')
+  };
+  body.users.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  body.models.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  body.channels.innerHTML = '<tr><td colspan="4" class="muted">加载中…</td></tr>';
+  try {
+    const r = await api('/api/rankings');
+    if (!r.ok) {
+      const msg = '<tr><td colspan="4" class="muted">获取失败（' + r.status + '）</td></tr>';
+      body.users.innerHTML = msg;
+      body.models.innerHTML = msg;
+      body.channels.innerHTML = msg;
+      return;
+    }
+    const d = await r.json();
+    const top = d.top || {};
+    renderRank(body.users, d.users || d.top_users || top.users, ['user', 'username', 'key', 'token', 'name'], true);
+    renderRank(body.models, d.models || d.top_models || top.models, ['model', 'name'], false);
+    renderRank(body.channels, d.channels || d.top_channels || top.channels, ['channel', 'name'], false);
+  } catch (e) {
+    const msg = '<tr><td colspan="4" class="muted">请求失败</td></tr>';
+    body.users.innerHTML = msg;
+    body.models.innerHTML = msg;
+    body.channels.innerHTML = msg;
+  }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadRankings();
+})();
+</script>
+</body>
+</html>

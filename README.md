@@ -78,6 +78,12 @@
 | 渠道成本 | `/api/stats/channels` 按渠道聚合请求/消耗 |
 | 额度单位 | `quota_unit`（tokens/units，units 模式 ×500000 对齐 new-api 计费单位） |
 | 发票/账单 | `/api/billing/invoice`（PDF）、`/admin/users/batch_recharge`（批量充值）、月度汇总邮件推送 |
+| 虚拟模型 | `/admin/vmodels`：展示名伪装（多个展示名→同一真实上游）、自定义价格倍率，`/v1/models` 自动列出并路由计费 |
+| 支付网关 | 订单系统 + 可测试的模拟支付（mock），Stripe/Epay/Pancake 配置位预留；`/api/wallet` 钱包充值 |
+| 排行榜/定价 | `/api/rankings`（热门用户/模型/渠道）、`/api/pricing`（公开模型价格表） |
+| 聊天预设 | `/api/presets` 预设 CRUD，聊天页一键套用 |
+| 每日签到 | `/api/user/checkin` 每日签到送额度（可配），UI 一键签到 |
+| 性能监控 | `/api/ops/perf`（CPU/内存/goroutine），超阈值自动 503 保护（`/api/setting/perf` 配置） |
 
 ---
 
