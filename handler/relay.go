@@ -450,6 +450,15 @@ func RelayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 虚拟模型系统提示词注入：chat/completions 请求体最前面补一条 system 消息
+	if prompt, ok := model.GetVModelPrompt(displayName); ok && prompt != "" && strings.Contains(r.URL.Path, "/chat/completions") {
+		if nb := injectSystemPrompt(bodyBuf, prompt); nb != nil {
+			bodyBuf = nb
+			r.Body = io.NopCloser(bytes.NewReader(bodyBuf))
+			r.ContentLength = int64(len(bodyBuf))
+		}
+	}
+
 	targets := buildTargets(group, modelName)
 	if len(targets) == 0 {
 		writeError(w, http.StatusBadGateway, "No available channel for model: "+modelName, "server_error")
@@ -650,6 +659,36 @@ func rewriteModel(body []byte, modelName string) []byte {
 	out, err := json.Marshal(m)
 	if err != nil {
 		return body
+	}
+	return out
+}
+
+// injectSystemPrompt 在 chat/completions 请求体 messages 最前面注入 system 提示词；
+// 若首条消息已是相同 system 提示词则返回 nil（不修改）。
+func injectSystemPrompt(body []byte, prompt string) []byte {
+	var m map[string]interface{}
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil
+	}
+	msgs, ok := m["messages"].([]interface{})
+	if !ok {
+		return nil
+	}
+	if len(msgs) > 0 {
+		if first, ok := msgs[0].(map[string]interface{}); ok {
+			if role, _ := first["role"].(string); role == "system" {
+				if content, _ := first["content"].(string); content == prompt {
+					return nil
+				}
+			}
+		}
+	}
+	m["messages"] = append([]interface{}{
+		map[string]interface{}{"role": "system", "content": prompt},
+	}, msgs...)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return nil
 	}
 	return out
 }

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新增用户</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+<style>
+.backbar {
+  display: flex; align-items: center; gap: 10px;
+  margin: -20px -20px 14px; padding: 8px 16px;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 30;
+}
+.backbar h2 { margin: 0; font-size: 16px; }
+.backbar .btn { flex: 0 0 auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="backbar">
+    <button class="btn btn-default" onclick="backToUsers()">← 返回</button>
+    <h2>新增用户</h2>
+  </div>
+
+  <div class="card">
+    <div class="form-group">
+      <div class="field"><label>用户名</label><input id="uName" placeholder="如 alice"></div>
+      <div class="field"><label>密码</label><input id="uPwd" type="password" placeholder="登录密码"></div>
+      <div class="field"><label>角色</label>
+        <select id="uRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
+      </div>
+    </div>
+    <div class="form-group">
+      <div class="field"><label>额度（token 数，-1 不限）</label><input id="uQuota" type="number" placeholder="-1 不限" value="-1"></div>
+      <div class="field"><label>每分钟限流（0=不限）</label><input id="uRate" type="number" placeholder="0=不限" value="0"></div>
+      <div class="field"><label>父账号（可选）</label>
+        <input id="uParent" list="userList" placeholder="选择或输入父账号用户名">
+        <datalist id="userList"></datalist>
+      </div>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="addUser()">创建用户</button>
+      <span id="uMsg" class="msg" style="min-height:18px"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+function showMsg(el, text, ok) {
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+function backToUsers(){
+  var p = window.parent;
+  try{
+    if(p && p !== window && typeof p.nav === 'function'){
+      p.nav('feat_users', '用户', p.document.querySelector('#menu .menu-item[data-page="feat_users"]'));
+      return;
+    }
+  }catch(e){ /* 跨域忽略 */ }
+  history.back();
+}
+
+// 父账号候选：已有用户名
+async function loadUserOptions(){
+  try{
+    const res = await api('/admin/users');
+    if(!res.ok) return;
+    const us = await res.json();
+    const dl = document.getElementById('userList');
+    dl.innerHTML = us.map(function(u){
+      return '<option value="' + escapeHtml(u.username) + '"></option>';
+    }).join('');
+  }catch(e){ /* 接口不可用时保持手动输入 */ }
+}
+
+async function addUser(){
+  const msg = $('uMsg');
+  const username = v('uName').trim();
+  const password = v('uPwd');
+  const parent = v('uParent').trim();
+  if(!username){ showMsg(msg, '请填写用户名', false); return; }
+  if(!password){ showMsg(msg, '请填写密码', false); return; }
+  const data = {
+    username: username,
+    password: password,
+    role: v('uRole'),
+    quota: parseInt(v('uQuota'), 10) || -1,
+    rate_limit: parseInt(v('uRate'), 10) || 0
+  };
+  if(parent) data.parent = parent;
+  try{
+    const res = await api('/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if(!res.ok){
+      let t = '';
+      try{ const d = await res.json(); t = d.error || d.message || ''; }catch(e){ /* 空响应 */ }
+      showMsg(msg, '创建失败：' + (t || res.status), false);
+      return;
+    }
+    showMsg(msg, '创建成功，即将返回用户列表', true);
+    setTimeout(backToUsers, 800);
+  }catch(e){
+    showMsg(msg, '请求出错：' + (e.message || e), false);
+  }
+}
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadUserOptions();
+})();
+</script>
+</body>
+</html>

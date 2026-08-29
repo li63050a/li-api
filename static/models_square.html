@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型广场 · API 网关</title>
+    <link rel="stylesheet" href="/common.css">
+    <script>
+        (function () {
+            if (localStorage.getItem('gw_theme') === 'dark') document.documentElement.classList.add('dark');
+            fetch('/api/public', { headers: { Accept: 'application/json' } })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (d && d.site_name) {
+                        var el = document.getElementById('siteName');
+                        if (el) el.textContent = d.site_name;
+                        document.title = '模型广场 · ' + d.site_name;
+                    }
+                })
+                .catch(function () {});
+        })();
+        function navConsole() {
+            if (!localStorage.getItem('gw_token')) { location.href = '/index.html'; return false; }
+            fetch('/api/user/self', { headers: { Authorization: 'Bearer ' + localStorage.getItem('gw_token') } })
+                .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+                .then(function (d) {
+                    location.href = d.role === 'root' ? '/index.html' : '/console.html';
+                })
+                .catch(function () { location.href = '/index.html'; });
+            return false;
+        }
+        function navRanking() {
+            if (!localStorage.getItem('gw_token')) { location.href = '/index.html'; return false; }
+            fetch('/api/user/self', { headers: { Authorization: 'Bearer ' + localStorage.getItem('gw_token') } })
+                .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+                .then(function () { location.href = '/feat_rankings.html'; })
+                .catch(function () { location.href = '/index.html'; });
+            return false;
+        }
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+    </script>
+</head>
+<body class="site-page">
+    <nav class="site-nav">
+        <a class="site-brand" href="/" title="返回首页">
+            <svg class="site-logo" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+                <defs>
+                    <linearGradient id="gwLogoGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#1677ff"/>
+                        <stop offset="1" stop-color="#53a7ff"/>
+                    </linearGradient>
+                </defs>
+                <rect width="32" height="32" rx="7" fill="url(#gwLogoGrad)"/>
+                <path d="M9 16h14M16 9v14" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+            </svg>
+            <span class="site-name" id="siteName">API 网关</span>
+        </a>
+        <div class="site-right">
+            <div class="site-links">
+                <a class="site-link" href="/">主页</a>
+                <a class="site-link" href="#" onclick="return navConsole()">控制台</a>
+                <a class="site-link active" href="/models_square.html">模型广场</a>
+                <a class="site-link" href="#" onclick="return navRanking()">排行榜</a>
+                <a class="site-link" href="/about.html">关于</a>
+            </div>
+            <div class="landing-actions">
+                <button class="btn btn-default" onclick="location.href='/index.html'">登录</button>
+                <button class="btn btn-primary" onclick="location.href='/index.html'">创建账户</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="topbar">
+            <h2>模型广场</h2>
+            <button class="btn btn-primary" onclick="loadModels()">刷新</button>
+        </div>
+
+        <div class="card">
+            <p class="hint">仅展示，调用需 API 密钥</p>
+            <div id="modelGrid"><div class="empty"><p class="muted"><span class="spin"></span>加载中…</p></div></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadModels() {
+            const grid = document.getElementById('modelGrid');
+            grid.innerHTML = '<div class="empty"><p class="muted"><span class="spin"></span>加载中…</p></div>';
+            let list = [];
+            try {
+                const r = await fetch('/api/models_public', { headers: { Accept: 'application/json' } });
+                if (!r.ok) throw new Error(String(r.status));
+                const d = await r.json();
+                list = Array.isArray(d) ? d : (d.models || d.data || d.items || d.list || []);
+            } catch (e) {
+                grid.innerHTML = '<div class="empty"><p class="muted">模型列表加载失败</p></div>';
+                return;
+            }
+            if (!list || list.length === 0) {
+                grid.innerHTML = '<div class="empty"><p class="muted">暂无可用模型</p></div>';
+                return;
+            }
+            grid.innerHTML = '<div class="model-grid">' + list.map(function (m) {
+                const name = m && (m.id || m.name || m.model || m.display_name || m.model_name);
+                return '<div class="model-chip">' + escapeHtml(String(name)) + '</div>';
+            }).join('') + '</div>';
+        }
+        loadModels();
+    </script>
+</body>
+</html>

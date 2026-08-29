@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关于 · API 网关</title>
+    <link rel="stylesheet" href="/common.css">
+    <script>
+        (function () {
+            if (localStorage.getItem('gw_theme') === 'dark') document.documentElement.classList.add('dark');
+            fetch('/api/public', { headers: { Accept: 'application/json' } })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (d && d.site_name) {
+                        var el = document.getElementById('siteName');
+                        if (el) el.textContent = d.site_name;
+                        document.title = '关于 · ' + d.site_name;
+                    }
+                })
+                .catch(function () {});
+        })();
+        function navConsole() {
+            if (!localStorage.getItem('gw_token')) { location.href = '/index.html'; return false; }
+            fetch('/api/user/self', { headers: { Authorization: 'Bearer ' + localStorage.getItem('gw_token') } })
+                .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+                .then(function (d) {
+                    location.href = d.role === 'root' ? '/index.html' : '/console.html';
+                })
+                .catch(function () { location.href = '/index.html'; });
+            return false;
+        }
+        function navRanking() {
+            if (!localStorage.getItem('gw_token')) { location.href = '/index.html'; return false; }
+            fetch('/api/user/self', { headers: { Authorization: 'Bearer ' + localStorage.getItem('gw_token') } })
+                .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+                .then(function () { location.href = '/feat_rankings.html'; })
+                .catch(function () { location.href = '/index.html'; });
+            return false;
+        }
+        function copyQQ() {
+            var btn = document.getElementById('copyQQBtn');
+            (navigator.clipboard ? navigator.clipboard.writeText('1026939741') : Promise.reject(new Error('no clipboard')))
+                .then(function () {
+                    btn.textContent = '已复制';
+                    setTimeout(function () { btn.textContent = '复制'; }, 1500);
+                })
+                .catch(function () { alert('复制失败，请手动复制：1026939741'); });
+        }
+    </script>
+</head>
+<body class="site-page">
+    <nav class="site-nav">
+        <a class="site-brand" href="/" title="返回首页">
+            <svg class="site-logo" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+                <defs>
+                    <linearGradient id="gwLogoGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#1677ff"/>
+                        <stop offset="1" stop-color="#53a7ff"/>
+                    </linearGradient>
+                </defs>
+                <rect width="32" height="32" rx="7" fill="url(#gwLogoGrad)"/>
+                <path d="M9 16h14M16 9v14" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+            </svg>
+            <span class="site-name" id="siteName">API 网关</span>
+        </a>
+        <div class="site-right">
+            <div class="site-links">
+                <a class="site-link" href="/">主页</a>
+                <a class="site-link" href="#" onclick="return navConsole()">控制台</a>
+                <a class="site-link" href="/models_square.html">模型广场</a>
+                <a class="site-link" href="#" onclick="return navRanking()">排行榜</a>
+                <a class="site-link active" href="/about.html">关于</a>
+            </div>
+            <div class="landing-actions">
+                <button class="btn btn-default" onclick="location.href='/index.html'">登录</button>
+                <button class="btn btn-primary" onclick="location.href='/index.html'">创建账户</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card about-card">
+            <h2>关于本站</h2>
+            <p>本站是一站式多模型聚合的 AI 网关管理平台，统一接入 GPT、Claude、Gemini 等主流模型，
+                提供令牌管理、透明计费、实时统计、消费明细与安全限额等能力，帮助开发者快速、安全地接入各类大模型服务。</p>
+
+            <h3>开发者信息</h3>
+            <div class="about-info">
+                <div class="about-row">
+                    <span class="about-label">开发者</span>
+                    <span class="about-val">小帅5656</span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">仓库地址</span>
+                    <span class="about-val">
+                        <a class="link-blue" href="https://github.com/li63050a/li-api" target="_blank" rel="noopener">https://github.com/li63050a/li-api</a>、
+                        <a class="link-blue" href="https://gitee.com/li63050a/li-api" target="_blank" rel="noopener">https://gitee.com/li63050a/li-api</a>
+                    </span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">开发者邮箱</span>
+                    <span class="about-val"><a class="link-blue" href="mailto:li63050@qq.com">li63050@qq.com</a></span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">开发者 B站</span>
+                    <span class="about-val"><a class="link-blue" href="https://b23.tv/N5z08ix" target="_blank" rel="noopener">小帅5656</a></span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">QQ交流群</span>
+                    <span class="about-val">
+                        <a class="link-blue" href="https://qun.qq.com/universal-share/share?ac=1&amp;authKey=x8ScTuuGUe1fLQD7uW2i%2FjJMJb%2B%2BeEqdaKhrhfInu6232qLxQU8G%2FOeGt%2BSJN4hr&amp;busi_data=eyJncm91cENvZGUiOiIxMDI2OTM5NzQxIiwidG9rZW4iOiJYTUxMcFVMZ2l6QUdhNGtBdldCdXp0VEpuc1dmNFZJOXJJdWx4MWRsckVQOTc2elFCNnBjUEpFVDR0M0V4UWttIiwidWluIjoiMzYzNTczNjE4MCJ9&amp;data=m33aEyd1nqVaGqnD37L81RdFZRdtDzc36LiQl75bAu_rqnyZJ4jJqwV7rO1LUN3h3N5EZ7QWV2x434ekH-ZrcQ&amp;svctype=4&amp;tempid=h5_group_info" target="_blank" rel="noopener">1026939741</a>
+                        <button class="btn btn-default" id="copyQQBtn" onclick="copyQQ()">复制</button>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

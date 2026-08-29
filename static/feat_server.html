@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务器管理</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>服务器管理</h2>
+    <button class="btn btn-primary" onclick="openDir(currentPath)">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>文件管理</h3>
+    <p class="hint" style="margin-top:0">仅 data 目录内可操作，路径相对 data 目录（留空 = 根目录）。</p>
+    <div class="form-group">
+      <input id="fsPath" placeholder="路径，如 data 或 data/logs">
+      <button class="btn btn-primary" onclick="openDir(v('fsPath'))">打开</button>
+      <button class="btn btn-default" onclick="goUp()">返回上级</button>
+      <span id="fsMsg" class="msg" style="min-height:18px"></span>
+    </div>
+    <div class="form-group">
+      <input type="file" id="fsFile" style="flex:1 1 260px">
+      <button class="btn btn-success" onclick="uploadFile()">上传到当前目录</button>
+    </div>
+    <table>
+      <thead><tr><th>名称</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
+      <tbody id="fsBody"><tr><td colspan="4" class="muted">打开目录以查看</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>文件查看 / 编辑</h3>
+    <div id="fsEditorWrap" style="display:none">
+      <textarea id="fsEditor" rows="12" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px"></textarea>
+      <div class="form-group" style="margin-top:10px">
+        <button class="btn btn-primary" onclick="saveFile()">保存</button>
+        <button class="btn btn-danger" onclick="delCurrent()">删除</button>
+        <span id="fsEditMsg" class="msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>终端（root 专属）</h3>
+    <div class="form-group">
+      <input id="cmdInput" placeholder="输入命令，如 ls /">
+      <button class="btn btn-primary" onclick="runCmd()">执行</button>
+    </div>
+    <pre class="preview" id="cmdOutput" style="max-height:320px">—</pre>
+    <h3 style="margin-top:14px">历史命令（最近 20 条）</h3>
+    <div class="live-list" id="cmdHistory"><span class="muted small">暂无历史</span></div>
+  </div>
+</div>
+
+<script>
+let currentPath = '';
+let currentEntries = [];
+let currentFile = null;
+let cmdHistory = [];
+
+function showFsMsg(text, ok) {
+  const el = $('fsMsg');
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+function fmtSize(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function joinPath(dir, name) {
+  dir = String(dir == null ? '' : dir).trim().replace(/\/+$/, '');
+  return dir ? dir + '/' + name : name;
+}
+
+function escJs(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+function isDirEntry(e) {
+  return e.is_dir === true || e.isdir === true || e.type === 'dir' || String(e.is_dir) === '1' || e.dir === true;
+}
+
+async function openDir(path) {
+  path = String(path == null ? '' : path).trim();
+  const body = $('fsBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted"><span class="spin"></span>加载中…</td></tr>';
+  showFsMsg('', true);
+  try {
+    const r = await api('/api/ops/fs?path=' + encodeURIComponent(path));
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      body.innerHTML = '<tr><td colspan="4" class="msg">打开失败：' + escapeHtml(t || r.status) + '</td></tr>';
+      return;
+    }
+    const d = await r.json();
+    currentPath = path;
+    $('fsPath').value = path;
+    currentEntries = Array.isArray(d) ? d : (d.entries || d.files || d.list || []);
+    renderFs(currentEntries);
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="4" class="msg">请求出错：' + escapeHtml(e.message || e) + '</td></tr>';
+  }
+}
+
+function renderFs(list) {
+  const body = $('fsBody');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="muted">空目录</td></tr>'; return; }
+  const dirs = list.filter(isDirEntry);
+  const files = list.filter(e => !isDirEntry(e));
+  const renderRow = (e) => {
+    const isDir = isDirEntry(e);
+    const name = String(e.name || e.filename || '');
+    const full = joinPath(currentPath, name);
+    const mt = fmtTime(e.mod_time || e.mtime || e.modified || e.modified_time);
+    const action = isDir
+      ? '<button class="btn btn-link" onclick="openDir(\'' + escJs(full) + '\')">打开</button>'
+      : '<button class="btn btn-link" onclick="viewFile(\'' + escJs(full) + '\')">查看</button> ' +
+        '<button class="btn btn-link" style="color:var(--danger)" onclick="deleteFile(\'' + escJs(full) + '\')">删除</button>';
+    return '<tr>' +
+      '<td>' + (isDir ? '<span style="font-weight:600">▸ </span>' : '') + escapeHtml(name) + '</td>' +
+      '<td>' + (isDir ? '—' : fmtSize(e.size)) + '</td>' +
+      '<td>' + escapeHtml(mt) + '</td>' +
+      '<td>' + action + '</td>' +
+    '</tr>';
+  };
+  body.innerHTML = dirs.map(renderRow).concat(files.map(renderRow)).join('');
+}
+
+function goUp() {
+  const p = String(currentPath || '').trim();
+  if (!p) { openDir(''); return; }
+  const idx = p.lastIndexOf('/');
+  openDir(idx > 0 ? p.slice(0, idx) : '');
+}
+
+async function viewFile(full) {
+  const wrap = $('fsEditorWrap');
+  $('fsEditMsg').textContent = '';
+  wrap.style.display = '';
+  $('fsEditor').value = '加载中…';
+  try {
+    const r = await api('/api/ops/fs/read?path=' + encodeURIComponent(full));
+    const text = await r.text().catch(() => '');
+    if (!r.ok) {
+      $('fsEditor').value = '读取失败：' + (text || 'HTTP ' + r.status);
+      return;
+    }
+    let content = text;
+    try {
+      const d = JSON.parse(text);
+      if (d && typeof d === 'object') {
+        content = d.content != null ? d.content : (d.data != null ? d.data : JSON.stringify(d, null, 2));
+      }
+    } catch (e) { /* 纯文本 */ }
+    $('fsEditor').value = content == null ? '' : String(content);
+    currentFile = full;
+  } catch (e) {
+    $('fsEditor').value = '请求出错：' + (e.message || e);
+  }
+}
+
+async function saveFile() {
+  if (!currentFile) return;
+  const msg = $('fsEditMsg');
+  msg.textContent = '保存中…';
+  msg.style.color = 'var(--fg-2)';
+  try {
+    const r = await api('/api/ops/fs/write', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentFile, content: $('fsEditor').value })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = '保存失败：' + (d.error || d.message || r.status); msg.style.color = 'var(--danger)'; return; }
+    msg.textContent = '已保存'; msg.style.color = 'var(--success)';
+  } catch (e) {
+    msg.textContent = '请求出错'; msg.style.color = 'var(--danger)';
+  }
+}
+
+async function deleteFile(full) {
+  const name = String(full || '').split('/').pop() || full;
+  if (!confirm('确认删除 ' + name + ' ？')) return;
+  try {
+    const r = await api('/api/ops/fs/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: full })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showFsMsg('删除失败：' + (d.error || d.message || r.status), false); return; }
+    showFsMsg('已删除 ' + name, true);
+    if (currentFile === full) { currentFile = null; $('fsEditorWrap').style.display = 'none'; }
+    openDir(currentPath);
+  } catch (e) {
+    showFsMsg('删除请求出错', false);
+  }
+}
+
+function delCurrent() {
+  if (!currentFile) return;
+  deleteFile(currentFile);
+}
+
+async function uploadFile() {
+  const input = $('fsFile');
+  const file = input.files[0];
+  if (!file) { showFsMsg('请先选择文件', false); return; }
+  showFsMsg('上传中…', true);
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('path', joinPath(currentPath, file.name));
+  try {
+    const r = await api('/api/ops/fs/upload', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showFsMsg('上传失败：' + (d.error || d.message || r.status), false); return; }
+    showFsMsg('已上传 ' + file.name, true);
+    input.value = '';
+    openDir(currentPath);
+  } catch (e) {
+    showFsMsg('上传请求出错', false);
+  }
+}
+
+async function runCmd() {
+  const cmd = v('cmdInput').trim();
+  const out = $('cmdOutput');
+  if (!cmd) return;
+  out.textContent = '$ ' + cmd + '\n执行中…';
+  try {
+    const r = await api('/api/ops/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd: cmd })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      out.textContent = '$ ' + cmd + '\n执行失败：' + (d.error || d.message || r.status);
+      return;
+    }
+    const stdout = d.stdout != null ? String(d.stdout) : '';
+    const stderr = d.stderr != null ? String(d.stderr) : '';
+    const code = d.code != null ? d.code : d.exit_code;
+    out.textContent = '$ ' + cmd + '\n' + stdout +
+      (stderr ? '\n[stderr]\n' + stderr : '') +
+      '\n[退出码] ' + (code == null ? '—' : code);
+    pushHistory(cmd);
+    $('cmdInput').value = '';
+  } catch (e) {
+    out.textContent = '$ ' + cmd + '\n请求出错：' + (e.message || e);
+  }
+}
+
+function pushHistory(cmd) {
+  cmdHistory.unshift(cmd);
+  cmdHistory = cmdHistory.slice(0, 20);
+  const box = $('cmdHistory');
+  box.innerHTML = cmdHistory.length
+    ? cmdHistory.map(c => '<div class="live-item"><span class="live-time">$</span> ' + escapeHtml(c) + '</div>').join('')
+    : '<span class="muted small">暂无历史</span>';
+}
+
+$('cmdInput').addEventListener('keydown', function (ev) {
+  if (ev.key === 'Enter') { ev.preventDefault(); runCmd(); }
+});
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  openDir(currentPath);
+})();
+</script>
+</body>
+</html>

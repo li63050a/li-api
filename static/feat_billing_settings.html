@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>计费与支付</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>计费与支付</h2>
+    <button class="btn btn-primary" onclick="loadAll()">刷新</button>
+  </div>
+  <p id="globalMsg" class="msg"></p>
+
+  <!-- 支付网关 -->
+  <div class="card">
+    <div class="panel-head"><h3>支付网关</h3><button class="btn btn-success" onclick="savePay()">保存</button></div>
+    <div class="form-group">
+      <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="payMockEnabled"> 启用 Mock 支付</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="payMockAuto"> Mock 自动支付（下单即到账）</label>
+    </div>
+    <div class="form-group">
+      <div class="field"><label>Stripe Secret Key</label><input id="payStripeSecret" type="password" placeholder="留空不修改"></div>
+      <div class="field"><label>Stripe Public Key</label><input id="payStripePublic" placeholder="pk_live_…"></div>
+    </div>
+    <div class="form-group">
+      <div class="field"><label>易支付 PID</label><input id="payEpayPid" placeholder="epay pid"></div>
+      <div class="field"><label>易支付 Key</label><input id="payEpayKey" type="password" placeholder="epay key"></div>
+      <div class="field"><label>Pancake Token</label><input id="payPancakeToken" type="password" placeholder="pancake token"></div>
+    </div>
+    <p id="payHint" class="hint"></p>
+    <p id="payMsg" class="msg"></p>
+  </div>
+
+  <!-- 套餐管理 -->
+  <div class="card">
+    <div class="panel-head"><h3>套餐管理</h3></div>
+    <div class="form-group">
+      <input id="planName" placeholder="套餐名称">
+      <input id="planQuota" type="number" placeholder="额度 (token)" value="1000000">
+      <input id="planDays" type="number" placeholder="周期 (天)" value="30">
+      <button class="btn btn-primary" onclick="addPlan()">新增套餐</button>
+      <span id="planMsg" class="msg"></span>
+    </div>
+    <table>
+      <thead><tr><th>名称</th><th>额度 (token)</th><th>周期 (天)</th><th>操作</th></tr></thead>
+      <tbody id="planBody"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- 订阅管理 -->
+  <div class="card">
+    <div class="panel-head"><h3>订阅管理</h3></div>
+    <table>
+      <thead><tr><th>用户</th><th>套餐</th><th>到期时间</th><th>订阅时间</th><th>操作</th></tr></thead>
+      <tbody id="subBody"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+    </table>
+    <p id="subMsg" class="msg"></p>
+  </div>
+
+  <!-- 签到设置 -->
+  <div class="card">
+    <div class="panel-head"><h3>签到设置</h3></div>
+    <div class="form-group">
+      <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="ckEnabled"> 启用每日签到</label>
+      <input id="ckMin" type="number" placeholder="签到额度下限" value="1000">
+      <input id="ckMax" type="number" placeholder="签到额度上限" value="1000">
+      <button class="btn btn-success" onclick="saveCheckin()">保存</button>
+      <span id="ckMsg" class="msg"></span>
+    </div>
+    <p class="hint" style="margin-top:-4px">签到额度在上下限之间随机发放；上下限相同则为固定额度。</p>
+  </div>
+
+  <!-- 注册 / 默认额度 -->
+  <div class="card">
+    <div class="panel-head"><h3>注册 / 默认额度</h3></div>
+    <div class="form-group">
+      <div class="field"><label>新用户默认额度 (token)</label><input id="regQuota" type="number" placeholder="0 表示无额度"></div>
+      <div class="field"><label>最小密码长度</label><input id="regMinPwd" type="number" placeholder="如 6"></div>
+      <button class="btn btn-success" onclick="saveRegister()">保存</button>
+      <span id="regMsg" class="msg"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let isRoot = false;
+
+function showMsg(el, text, ok) {
+  if(!el) return;
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+async function loadPay() {
+  try {
+    const r = await api('/api/setting/pay');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('payMockEnabled').checked = !!d.mock_enabled;
+    document.getElementById('payMockAuto').checked = !!d.mock_auto;
+    const hint = document.getElementById('payHint');
+    const configured = [
+      d.stripe_configured ? 'Stripe ✓' : 'Stripe ✗',
+      d.epay_configured ? '易支付 ✓' : '易支付 ✗',
+      d.pancake_configured ? 'Pancake ✓' : 'Pancake ✗'
+    ].join('　');
+    hint.textContent = '网关配置状态：' + configured;
+  } catch (e) { /* ignore */ }
+}
+
+async function savePay() {
+  const msg = document.getElementById('payMsg');
+  showMsg(msg, '保存中…', false);
+  const body = {
+    mock_enabled: document.getElementById('payMockEnabled').checked,
+    mock_auto: document.getElementById('payMockAuto').checked,
+    stripe_secret: v('payStripeSecret').trim(),
+    stripe_public_key: v('payStripePublic').trim(),
+    epay_pid: v('payEpayPid').trim(),
+    epay_key: v('payEpayKey').trim(),
+    pancake_token: v('payPancakeToken').trim()
+  };
+  try {
+    const r = await api('/api/setting/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { showMsg(msg, '保存失败：' + r.status, false); return; }
+    showMsg(msg, '已保存', true);
+    ['payStripeSecret','payStripePublic','payEpayPid','payEpayKey','payPancakeToken'].forEach(function(id){ document.getElementById(id).value=''; });
+    loadPay();
+  } catch (e) { showMsg(msg, '请求出错：' + (e.message || e), false); }
+}
+
+async function loadPlans() {
+  const body = document.getElementById('planBody');
+  loadState(body, '加载中…');
+  try {
+    const r = await api('/api/plans');
+    if (!r.ok) { emptyState(body, '获取失败'); return; }
+    const d = await r.json();
+    const plans = (d.plans || d) || [];
+    const list = Array.isArray(plans) ? plans : [];
+    if (!list.length) { emptyState(body, '暂无套餐'); return; }
+    body.innerHTML = list.map(function(p, i) {
+      return '<tr><td><b>' + escapeHtml(p.name) + '</b></td><td>' + Number(p.quota || 0).toLocaleString() + '</td>' +
+        '<td>' + escapeHtml(String(p.duration_days)) + ' 天</td>' +
+        '<td><button class="btn btn-danger" onclick="delPlan(' + i + ')">删除</button></td></tr>';
+    }).join('');
+    window.__plans = list;
+  } catch (e) { emptyState(body, '获取失败'); }
+}
+
+async function addPlan() {
+  const msg = document.getElementById('planMsg');
+  const name = v('planName').trim();
+  const quota = parseInt(v('planQuota'), 10);
+  const days = parseInt(v('planDays'), 10);
+  if (!name) { showMsg(msg, '请填写套餐名称', false); return; }
+  if (isNaN(quota) || quota <= 0) { showMsg(msg, '额度必须为正整数', false); return; }
+  if (isNaN(days) || days <= 0) { showMsg(msg, '周期必须为正整数', false); return; }
+  showMsg(msg, '保存中…', false);
+  try {
+    const r = await api('/api/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, quota: quota, duration_days: days }) });
+    if (!r.ok) {
+      let t = ''; try { const d = await r.json(); t = d.error || d.message || ''; } catch (e) {}
+      showMsg(msg, '新增失败：' + (t || r.status), false); return;
+    }
+    showMsg(msg, '已新增套餐 ' + name, true);
+    document.getElementById('planName').value = '';
+    loadPlans();
+  } catch (e) { showMsg(msg, '请求出错：' + (e.message || e), false); }
+}
+
+function delPlan(i) {
+  const list = window.__plans || [];
+  const p = list[i];
+  if (!p) return;
+  if (!confirm('确认删除套餐 ' + p.name + ' ？')) return;
+  api('/api/plans?name=' + encodeURIComponent(p.name), { method: 'DELETE' }).then(function(r) {
+    if (!r.ok) { showMsg(document.getElementById('planMsg'), '删除失败：' + r.status, false); return; }
+    showMsg(document.getElementById('planMsg'), '已删除', true);
+    loadPlans();
+  }).catch(function(e) { showMsg(document.getElementById('planMsg'), '请求出错', false); });
+}
+
+async function loadSubs() {
+  const body = document.getElementById('subBody');
+  loadState(body, '加载中…');
+  try {
+    const r = await api('/api/subscriptions');
+    if (!r.ok) { emptyState(body, '获取失败'); return; }
+    const d = await r.json();
+    const list = d.subscriptions || [];
+    if (!list.length) { emptyState(body, '暂无订阅'); return; }
+    body.innerHTML = list.map(function(s, i) {
+      return '<tr><td>' + escapeHtml(s.username) + '</td><td>' + escapeHtml(s.plan) + '</td>' +
+        '<td>' + escapeHtml(s.expire || '-') + '</td><td>' + escapeHtml(s.granted_at || '-') + '</td>' +
+        '<td><button class="btn btn-danger" onclick="resetSub(' + i + ')">重置</button></td></tr>';
+    }).join('');
+    window.__subs = list;
+  } catch (e) { emptyState(body, '获取失败'); }
+}
+
+function resetSub(i) {
+  const s = (window.__subs || [])[i];
+  if (!s) return;
+  if (!confirm('确认重置用户 ' + s.username + ' 的订阅？')) return;
+  api('/api/subscriptions/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: s.username, plan: s.plan }) })
+    .then(function(r) {
+      const msg = document.getElementById('subMsg');
+      if (!r.ok) { showMsg(msg, '重置失败：' + r.status, false); return; }
+      showMsg(msg, '已重置 ' + s.username + ' 的订阅', true);
+      loadSubs();
+    }).catch(function(e) { showMsg(document.getElementById('subMsg'), '请求出错', false); });
+}
+
+async function loadCheckin() {
+  try {
+    const r = await api('/api/setting/checkin');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('ckEnabled').checked = !!d.enabled;
+    if (d.quota_min != null) document.getElementById('ckMin').value = d.quota_min;
+    if (d.quota_max != null) document.getElementById('ckMax').value = d.quota_max;
+  } catch (e) { /* ignore */ }
+}
+
+async function saveCheckin() {
+  const msg = document.getElementById('ckMsg');
+  const min = parseInt(v('ckMin'), 10);
+  const max = parseInt(v('ckMax'), 10);
+  if (isNaN(min) || isNaN(max) || min <= 0 || max <= 0 || max < min) { showMsg(msg, '上下限必须为正数且上限不小于下限', false); return; }
+  showMsg(msg, '保存中…', false);
+  try {
+    const r = await api('/api/setting/checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: document.getElementById('ckEnabled').checked, quota_min: min, quota_max: max }) });
+    if (!r.ok) { showMsg(msg, '保存失败：' + r.status, false); return; }
+    showMsg(msg, '已保存', true);
+  } catch (e) { showMsg(msg, '请求出错：' + (e.message || e), false); }
+}
+
+async function loadRegister() {
+  try {
+    const r = await api('/api/setting/register');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.default_quota != null) document.getElementById('regQuota').value = d.default_quota;
+    if (d.min_password_len != null) document.getElementById('regMinPwd').value = d.min_password_len;
+  } catch (e) { /* ignore */ }
+}
+
+async function saveRegister() {
+  const msg = document.getElementById('regMsg');
+  const quota = parseInt(v('regQuota'), 10);
+  const minPwd = parseInt(v('regMinPwd'), 10);
+  if (isNaN(quota) || quota < 0) { showMsg(msg, '默认额度必须为不小于 0 的整数', false); return; }
+  if (isNaN(minPwd) || minPwd < 0) { showMsg(msg, '最小密码长度必须为不小于 0 的整数', false); return; }
+  showMsg(msg, '保存中…', false);
+  try {
+    const r = await api('/api/setting/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ default_quota: quota, min_password_len: minPwd }) });
+    if (!r.ok) { showMsg(msg, '保存失败：' + r.status, false); return; }
+    showMsg(msg, '已保存', true);
+  } catch (e) { showMsg(msg, '请求出错：' + (e.message || e), false); }
+}
+
+function loadAll() {
+  loadPay();
+  loadPlans();
+  loadSubs();
+  loadCheckin();
+  loadRegister();
+}
+
+(async () => {
+  try {
+    const me = await ensureAuth();
+    isRoot = me.role === 'root';
+  } catch (e) { return; }
+  if (!isRoot) {
+    const g = document.getElementById('globalMsg');
+    showMsg(g, '仅 root 可管理计费与支付设置', false);
+  }
+  loadAll();
+})();
+</script>
+</body>
+</html>

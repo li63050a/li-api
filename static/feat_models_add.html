@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>添加模型</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+<style>
+.backbar {
+  display: flex; align-items: center; gap: 10px;
+  margin: -20px -20px 14px; padding: 8px 16px;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 30;
+}
+.backbar h2 { margin: 0; font-size: 16px; }
+.backbar .btn { flex: 0 0 auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="backbar">
+    <button class="btn btn-default" onclick="goBackModels()">← 返回</button>
+    <h2>添加模型（渠道 + 模型一体）</h2>
+    <button class="btn btn-primary" onclick="loadList()">刷新</button>
+  </div>
+
+  <div class="card">
+    <h3>新增模型</h3>
+    <div class="form-group">
+      <div class="field"><label>显示名称</label><input id="maName" placeholder="如 mygpt-pro"></div>
+      <div class="field"><label>接口类型</label>
+        <select id="maType">
+          <option value="openai">OpenAI</option>
+          <option value="compatible">OpenAI 兼容</option>
+          <option value="azure">Azure</option>
+        </select>
+      </div>
+      <div class="field" id="maApiVerWrap" style="display:none"><label>Azure api-version</label><input id="maApiVersion" placeholder="如 2024-02-15-preview"></div>
+    </div>
+    <div class="form-group">
+      <div class="field"><label>API 地址</label><input id="maBase" placeholder="如 https://api.openai.com/v1"></div>
+      <div class="field"><label>API 密钥</label><input id="maKey" type="password" placeholder="sk-…"></div>
+      <div class="field"><label>分组</label><select id="maGroup"><option value="default">default</option></select></div>
+    </div>
+    <div class="field" style="flex:1 1 100%">
+      <label>模型列表（从列表搜索选择，回车添加自定义）</label>
+      <div class="ms-box">
+        <div class="ms-chips" id="maChips"></div>
+        <input id="maModelFilter" placeholder="输入筛选，回车添加自定义模型">
+        <div class="ms-list" id="maModelList"></div>
+      </div>
+      <input type="hidden" id="maModels">
+    </div>
+    <div class="form-group" style="margin-top:8px">
+      <input id="maCustomModel" placeholder="自定义模型名（不在列表时手动输入）">
+      <button class="btn btn-default" onclick="addCustomModel()">添加自定义</button>
+      <button class="btn btn-primary" id="maFetchBtn" onclick="fetchModels()">一键拉取模型</button>
+    </div>
+    <div class="form-group">
+      <div class="field">
+        <label>系统提示词</label>
+        <textarea id="maPrompt" rows="3" placeholder="调用时自动附加该提示词"></textarea>
+      </div>
+      <div class="field"><label>价格倍率</label><input id="maRatio" type="number" step="0.01" value="1"></div>
+    </div>
+    <p class="hint" style="margin-top:-4px">调用时自动附加该系统提示词；价格倍率用于计费倍乘。</p>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="addModel()">添加模型</button>
+      <span id="maMsg" class="msg" style="min-height:18px"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="panel-head">
+      <h3>已有模型</h3>
+    </div>
+    <table>
+      <thead><tr><th>显示名</th><th>真实上游</th><th>价格倍率</th><th>补全倍率</th><th>系统提示词</th><th>操作</th></tr></thead>
+      <tbody id="maList"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let vmLines = [];
+let modelPool = [];
+let selModels = new Set();
+
+// 返回模型页：嵌套在模型 Tab 页时切回「模型定价」Tab，否则由父级导航，最后回退浏览器历史
+function goBackModels(){
+  var p = window.parent;
+  try{
+    if(p && p !== window){
+      if(typeof p.switchTab === 'function'){ p.switchTab('feat_model_pricing'); return; }
+      if(typeof p.nav === 'function'){ p.nav('feat_models', '模型', null); return; }
+    }
+  }catch(e){ /* 跨域忽略 */ }
+  history.back();
+}
+
+function showMsg(el, text, ok) {
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+function truncate(s, n) {
+  s = String(s == null ? '' : s);
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+async function loadList() {
+  const tb = $('maList');
+  tb.innerHTML = '<tr><td colspan="6" class="muted"><span class="spin"></span>加载中…</td></tr>';
+  try {
+    const r = await api('/admin/vmodels');
+    if (!r.ok) { tb.innerHTML = '<tr><td colspan="6" class="msg">加载失败：' + r.status + '</td></tr>'; return; }
+    const d = await r.json();
+    const list = d.vmodels || [];
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="6" class="muted">暂无模型</td></tr>'; return; }
+    const lines = await Promise.all(list.map(async (vm) => {
+      let prompt = '';
+      try {
+        const dr = await api('/api/models/detail?name=' + encodeURIComponent(vm.display));
+        if (dr.ok) {
+          const dd = await dr.json();
+          prompt = dd.system_prompt || dd.prompt || '';
+        }
+      } catch (e) { /* 详情接口暂不可用时仅显示基础信息 */ }
+      return { vm: vm, prompt: String(prompt) };
+    }));
+    vmLines = lines;
+    tb.innerHTML = lines.map((it, i) => `
+      <tr>
+        <td><code>${escapeHtml(it.vm.display)}</code></td>
+        <td>${escapeHtml(it.vm.upstream)}</td>
+        <td>${escapeHtml(String(it.vm.ratio))}</td>
+        <td>${escapeHtml(String(it.vm.completion_ratio))}</td>
+        <td>${it.prompt ? '<code>' + escapeHtml(truncate(it.prompt, 30)) + '</code>' : '<span class="muted">—</span>'}</td>
+        <td>
+          <button class="btn btn-link" onclick="renameModel(${i})">改名</button>
+          <button class="btn btn-link" onclick="setPrompt(${i})">设提示词</button>
+          <button class="btn btn-danger" onclick="delModel(${i})">删除</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="6" class="msg">请求出错</td></tr>';
+  }
+}
+
+// 分组下拉：/admin/groups + 默认 default
+async function loadGroupOptions(){
+  const sel = $('maGroup');
+  const names = [];
+  try{
+    const res = await api('/admin/groups');
+    if(res.ok){
+      const d = await res.json();
+      (d.groups||[]).forEach(function(g){ if(g && g.name) names.push(g.name); });
+    }
+  }catch(e){ /* 分组接口不可用时仅保留 default */ }
+  if(names.indexOf('default') === -1) names.unshift('default');
+  sel.innerHTML = names.map(function(n){ return '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>'; }).join('');
+  sel.value = 'default';
+}
+
+// 模型池：/api/models_list + /api/models_public 合并去重
+async function loadModelOptions(){
+  const seen = {};
+  for (const p of ['/api/models_list', '/api/models_public']) {
+    try {
+      const r = await api(p);
+      if (!r.ok) continue;
+      const d = await r.json();
+      (d.models || []).forEach(function(m){
+        m = String(m).trim();
+        if (m && !seen[m]) { seen[m] = 1; modelPool.push(m); }
+      });
+    } catch (e) { /* 单个接口失败不影响 */ }
+  }
+  modelPool.sort();
+  renderModelPicker();
+}
+
+function renderModelPicker(){
+  const list = $('maModelList');
+  if (!list) return;
+  const q = ($('maModelFilter').value || '').trim().toLowerCase();
+  const opts = modelPool.filter(m => m.toLowerCase().indexOf(q) !== -1);
+  if (opts.length === 0) {
+    list.innerHTML = '<div class="ms-empty muted">无匹配模型，可输入后回车添加自定义</div>';
+  } else {
+    list.innerHTML = opts.map(m =>
+      '<div class="ms-item' + (selModels.has(m) ? ' selected' : '') + '" data-m="' + escapeHtml(m) + '" onclick="toggleModel(this)">' +
+      (selModels.has(m) ? '☑ ' : '☐ ') + escapeHtml(m) + '</div>'
+    ).join('');
+  }
+  renderChips();
+}
+
+function toggleModel(item){
+  const m = item.getAttribute('data-m');
+  if (selModels.has(m)) selModels.delete(m); else selModels.add(m);
+  renderModelPicker();
+}
+
+function renderChips() {
+  const box = $('maChips');
+  if (!box) return;
+  box.innerHTML = selModels.size
+    ? Array.from(selModels).map(m =>
+        '<span class="chip" data-m="' + escapeHtml(m) + '">' + escapeHtml(m) + '<button type="button" class="chip-x" title="移除">×</button></span>'
+      ).join('')
+    : '<span class="muted small">从下方列表点击选中，或输入后回车添加自定义模型</span>';
+  $('maModels').value = Array.from(selModels).join(',');
+}
+
+function addCustomModel(){
+  const val = $('maCustomModel').value.trim();
+  if (!val) { showMsg($('maMsg'), '请输入自定义模型名', false); return; }
+  if (!selModels.has(val)) {
+    selModels.add(val);
+    if (modelPool.indexOf(val) === -1) modelPool.push(val);
+  }
+  $('maCustomModel').value = '';
+  renderModelPicker();
+}
+
+async function fetchModels() {
+  const msg = $('maMsg');
+  const btn = $('maFetchBtn');
+  const base = v('maBase').trim();
+  const key = v('maKey').trim();
+  if (!base || !key) { showMsg(msg, '请先填写 API 地址与 API 密钥', false); return; }
+  btn.disabled = true;
+  btn.textContent = '拉取中…';
+  msg.textContent = '';
+  try {
+    const r = await api('/api/models/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_url: base, api_key: key })
+    });
+    if (!r.ok) {
+      let t = '';
+      try { const d = await r.json(); t = d.error || d.message || ''; } catch (e) { /* 空响应 */ }
+      showMsg(msg, '拉取失败：' + (t || r.status), false);
+      return;
+    }
+    const d = await r.json().catch(() => ({}));
+    const arr = d.models || d.data || (Array.isArray(d) ? d : []);
+    const got = arr.map(x => (typeof x === 'string' ? x : (x.id || x.name || ''))).filter(Boolean);
+    if (!got.length) { showMsg(msg, '未拉取到模型', false); return; }
+    const seen = {};
+    modelPool.forEach(m => { seen[m] = 1; });
+    got.forEach(m => { if (!seen[m]) { seen[m] = 1; modelPool.push(m); } });
+    modelPool.sort();
+    selModels.clear();
+    renderModelPicker();
+    showMsg(msg, '拉取到 ' + got.length + ' 个模型，点击模型选中', true);
+  } catch (e) {
+    showMsg(msg, '拉取请求出错：' + (e.message || e), false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '一键拉取模型';
+  }
+}
+
+function toggleAzure() {
+  $('maApiVerWrap').style.display = v('maType') === 'azure' ? '' : 'none';
+}
+
+async function addModel() {
+  const msg = $('maMsg');
+  const name = v('maName').trim();
+  const type = v('maType');
+  const base = v('maBase').trim();
+  const key = v('maKey').trim();
+  const models = v('maModels').trim();
+  if (!name || !base || !key) { showMsg(msg, '请填写显示名称、API 地址与 API 密钥', false); return; }
+  if (!models) { showMsg(msg, '请选择或拉取至少一个模型', false); return; }
+  const payload = {
+    display_name: name,
+    vendor: type,
+    base_url: base,
+    api_key: key,
+    azure_api_version: v('maApiVersion').trim(),
+    models: models,
+    group: v('maGroup').trim() || 'default',
+    system_prompt: v('maPrompt').trim(),
+    ratio: parseFloat(v('maRatio')) || 1
+  };
+  try {
+    const r = await api('/api/models/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showMsg(msg, '添加失败：' + (d.error || d.message || r.status), false); return; }
+    showMsg(msg, '添加成功', true);
+    ['maName', 'maBase', 'maKey', 'maApiVersion', 'maPrompt'].forEach(id => $(id).value = '');
+    $('maRatio').value = '1';
+    selModels.clear();
+    renderModelPicker();
+    await loadList();
+  } catch (e) {
+    showMsg(msg, '添加请求出错：' + (e.message || e), false);
+  }
+}
+
+async function renameModel(i) {
+  const vm = vmLines[i].vm;
+  const nn = prompt('输入新的显示名：', vm.display);
+  if (nn === null) return;
+  const name = nn.trim();
+  if (!name || name === vm.display) return;
+  const msg = $('maMsg');
+  try {
+    const r = await api('/api/models/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: vm.display, new_name: name })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showMsg(msg, '改名失败：' + (d.error || d.message || r.status), false); return; }
+    showMsg(msg, '已改名为 ' + name, true);
+    await loadList();
+  } catch (e) {
+    showMsg(msg, '改名请求出错：' + (e.message || e), false);
+  }
+}
+
+async function setPrompt(i) {
+  const vm = vmLines[i].vm;
+  const p = prompt('设置系统提示词（留空清除）：', vmLines[i].prompt);
+  if (p === null) return;
+  const msg = $('maMsg');
+  try {
+    const r = await api('/api/models/prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: vm.display, prompt: p })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showMsg(msg, '设置失败：' + (d.error || d.message || r.status), false); return; }
+    showMsg(msg, '提示词已保存', true);
+    await loadList();
+  } catch (e) {
+    showMsg(msg, '设置请求出错：' + (e.message || e), false);
+  }
+}
+
+async function delModel(i) {
+  const name = vmLines[i].vm.display;
+  if (!confirm('确认删除模型 ' + name + ' ？')) return;
+  const msg = $('maMsg');
+  try {
+    const r = await api('/admin/vmodels?name=' + encodeURIComponent(name), { method: 'DELETE' });
+    if (!r.ok) { showMsg(msg, '删除失败：' + r.status, false); return; }
+    showMsg(msg, '已删除 ' + name, true);
+    await loadList();
+  } catch (e) {
+    showMsg(msg, '删除请求出错：' + (e.message || e), false);
+  }
+}
+
+$('maType').addEventListener('change', toggleAzure);
+
+(function () {
+  const filter = $('maModelFilter');
+  filter.addEventListener('input', renderModelPicker);
+  filter.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      addCustomModel();
+    }
+  });
+  const chips = $('maChips');
+  chips.addEventListener('click', function (ev) {
+    if (ev.target && ev.target.classList.contains('chip-x')) {
+      const chip = ev.target.closest('.chip');
+      if (chip) {
+        selModels.delete(chip.getAttribute('data-m'));
+        renderModelPicker();
+      }
+    }
+  });
+})();
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  await loadList();
+  loadGroupOptions();
+  loadModelOptions();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生成 API 密钥</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+<style>
+.backbar {
+  display: flex; align-items: center; gap: 10px;
+  margin: -20px -20px 14px; padding: 8px 16px;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 30;
+}
+.backbar h2 { margin: 0; font-size: 16px; }
+.backbar .btn { flex: 0 0 auto; }
+.key-result {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--primary-bg); border: 1px solid var(--primary);
+  border-radius: 8px; padding: 12px 14px;
+}
+.key-result code { font-size: 14px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="backbar">
+    <button class="btn btn-default" onclick="backToTokens()">← 返回</button>
+    <h2>生成 API 密钥</h2>
+  </div>
+
+  <div class="card">
+    <div class="form-group">
+      <div class="field"><label>名称 / 备注</label><input id="tkName" placeholder="如 我的应用"></div>
+      <div class="field"><label>套餐预设</label>
+        <select id="tkPreset">
+          <option value="">套餐预设（可选）</option>
+          <option value="free">免费</option>
+          <option value="basic">基础</option>
+          <option value="pro">高级</option>
+          <option value="custom">自定义</option>
+        </select>
+      </div>
+      <div class="field"><label>模型分组</label><select id="tkGroup"><option value="default">default</option></select></div>
+    </div>
+    <div class="field" style="flex:1 1 100%">
+      <label>允许模型（从列表搜索选择，留空=全部；回车添加自定义）</label>
+      <div class="ms-box">
+        <div class="ms-chips" id="tkChips"></div>
+        <input id="tkModelFilter" placeholder="输入筛选，回车添加自定义模型">
+        <div class="ms-list" id="tkModelList"></div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:8px">
+      <input id="tkCustomModel" placeholder="自定义模型名（不在列表时手动输入）">
+      <button class="btn btn-default" onclick="addCustomModel()">添加自定义</button>
+    </div>
+    <div class="form-group">
+      <input id="tkQuota" type="number" placeholder="额度(token数, -1 不限)" value="-1">
+      <label><input type="checkbox" id="tkUnlimited"> 不限</label>
+      <input id="tkRpm" type="number" placeholder="RPM(每分钟请求数, 0=不限)" value="0">
+      <input id="tkTpm" type="number" placeholder="TPM(每分钟token数, 0=不限)" value="0">
+      <input id="tkExpiredAt" type="datetime-local" placeholder="过期时间">
+    </div>
+    <p class="hint" style="margin-top:-4px">额度：0=不限额；套餐预设可一键填充额度/RPM/TPM；过期时间：-1=永不过期；RPM/TPM：0=不限</p>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="createToken()">生成 API 密钥</button>
+      <span id="tkMsg" class="msg" style="min-height:18px"></span>
+    </div>
+    <div id="tkResult" style="display:none">
+      <div class="key-result">
+        <code id="tkResultKey"></code>
+        <button class="btn btn-primary" id="tkCopyBtn" onclick="copyKey()">复制</button>
+        <button class="btn btn-default" onclick="closeResult()">关闭</button>
+      </div>
+      <p class="hint" style="margin-top:8px">密钥仅此一次完整展示，请立即保存。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let modelPool = [];
+let selectedModels = new Set();
+
+const tPresets = {
+  free: { quota: 100000, rpm: 0, tpm: 0 },
+  basic: { quota: 1000000, rpm: 60, tpm: 60000 },
+  pro: { quota: 10000000, rpm: 120, tpm: 120000 },
+  custom: { quota: '', rpm: '', tpm: '' }
+};
+
+function showMsg(el, text, ok) {
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+function backToTokens(){
+  var p = window.parent;
+  try{
+    if(p && p !== window && typeof p.nav === 'function'){
+      p.nav('feat_tokens', '令牌', p.document.querySelector('#menu .menu-item[data-page="feat_tokens"]'));
+      return;
+    }
+  }catch(e){ /* 跨域忽略 */ }
+  history.back();
+}
+
+// 模型分组下拉：/admin/groups + 默认 default
+async function loadGroupOptions(){
+  const sel = $('tkGroup');
+  const names = [];
+  try{
+    const res = await api('/admin/groups');
+    if(res.ok){
+      const d = await res.json();
+      (d.groups||[]).forEach(function(g){ if(g && g.name) names.push(g.name); });
+    }
+  }catch(e){ /* 分组接口不可用时仅保留 default */ }
+  if(names.indexOf('default') === -1) names.unshift('default');
+  sel.innerHTML = names.map(function(n){ return '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>'; }).join('');
+  sel.value = 'default';
+}
+
+// 模型池：/api/models_list + /api/models_public 合并去重
+async function loadModelOptions(){
+  const seen = {};
+  for (const p of ['/api/models_list', '/api/models_public']) {
+    try {
+      const r = await api(p);
+      if (!r.ok) continue;
+      const d = await r.json();
+      (d.models || []).forEach(function(m){
+        m = String(m).trim();
+        if (m && !seen[m]) { seen[m] = 1; modelPool.push(m); }
+      });
+    } catch (e) { /* 单个接口失败不影响 */ }
+  }
+  modelPool.sort();
+  renderModelPicker();
+}
+
+function renderModelPicker(){
+  const list = $('tkModelList');
+  if (!list) return;
+  const q = ($('tkModelFilter').value || '').trim().toLowerCase();
+  const opts = modelPool.filter(m => m.toLowerCase().indexOf(q) !== -1);
+  if (opts.length === 0) {
+    list.innerHTML = '<div class="ms-empty muted">无匹配模型，可输入后回车添加自定义</div>';
+  } else {
+    list.innerHTML = opts.map(m =>
+      '<div class="ms-item' + (selectedModels.has(m) ? ' selected' : '') + '" data-m="' + escapeHtml(m) + '" onclick="toggleModel(this)">' +
+      (selectedModels.has(m) ? '☑ ' : '☐ ') + escapeHtml(m) + '</div>'
+    ).join('');
+  }
+  renderChips();
+}
+
+function toggleModel(item){
+  const m = item.getAttribute('data-m');
+  if (selectedModels.has(m)) selectedModels.delete(m); else selectedModels.add(m);
+  renderModelPicker();
+}
+
+function renderChips(){
+  const box = $('tkChips');
+  if (!box) return;
+  box.innerHTML = selectedModels.size
+    ? Array.from(selectedModels).map(m =>
+        '<span class="chip" data-m="' + escapeHtml(m) + '">' + escapeHtml(m) + '<button type="button" class="chip-x" title="移除">×</button></span>'
+      ).join('')
+    : '<span class="muted small">留空 = 允许全部模型</span>';
+}
+
+function getSelectedModels(){ return Array.from(selectedModels).join(','); }
+
+function addCustomModel(){
+  const val = $('tkCustomModel').value.trim();
+  if (!val) return;
+  if (!selectedModels.has(val)) {
+    selectedModels.add(val);
+    if (modelPool.indexOf(val) === -1) modelPool.push(val);
+  }
+  $('tkCustomModel').value = '';
+  renderModelPicker();
+}
+
+function applyPreset(){
+  const p = tPresets[$('tkPreset').value];
+  if (!p) return;
+  $('tkQuota').value = p.quota;
+  $('tkRpm').value = p.rpm;
+  $('tkTpm').value = p.tpm;
+  $('tkUnlimited').checked = false;
+  $('tkPreset').value = '';
+}
+
+async function createToken() {
+  const msg = $('tkMsg');
+  const name = v('tkName').trim();
+  if (!name) { showMsg(msg, '请填写名称 / 备注', false); return; }
+  const exp = v('tkExpiredAt');
+  const data = {
+    name: name,
+    group: v('tkGroup') || 'default',
+    quota: $('tkUnlimited').checked ? -1 : (parseInt(v('tkQuota'), 10) || -1),
+    unlimited: $('tkUnlimited').checked ? 1 : 0,
+    expired_at: exp ? new Date(exp).toISOString() : null,
+    models: getSelectedModels(),
+    rpm: parseInt(v('tkRpm'), 10) || 0,
+    tpm: parseInt(v('tkTpm'), 10) || 0
+  };
+  msg.textContent = '';
+  try {
+    const res = await api('/admin/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { showMsg(msg, '生成失败：' + (d.error || d.message || res.status), false); return; }
+    if (!d.key) { showMsg(msg, '生成失败：响应缺少密钥', false); return; }
+    $('tkResultKey').textContent = d.key;
+    $('tkCopyBtn').textContent = '复制';
+    $('tkResult').style.display = '';
+    showMsg(msg, '已生成，请复制并妥善保存密钥', true);
+    $('tkName').value = '';
+    $('tkQuota').value = '-1';
+    $('tkRpm').value = '0';
+    $('tkTpm').value = '0';
+    $('tkExpiredAt').value = '';
+    $('tkUnlimited').checked = false;
+  } catch (e) {
+    showMsg(msg, '请求出错：' + (e.message || e), false);
+  }
+}
+
+function copyKey(){
+  const el = $('tkResultKey');
+  const val = el.textContent;
+  const btn = $('tkCopyBtn');
+  function done(ok){
+    btn.textContent = ok ? '已复制' : '复制失败';
+    if (ok) setTimeout(function(){ btn.textContent = '复制'; }, 2000);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(val).then(function(){ done(true); }, function(){ done(false); });
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = val;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { done(document.execCommand('copy')); } catch (e) { done(false); }
+  document.body.removeChild(ta);
+}
+
+function closeResult(){ $('tkResult').style.display = 'none'; }
+
+(function () {
+  const preset = $('tkPreset');
+  preset.addEventListener('change', applyPreset);
+  const filter = $('tkModelFilter');
+  filter.addEventListener('input', renderModelPicker);
+  filter.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      addCustomModel();
+    }
+  });
+  const chips = $('tkChips');
+  chips.addEventListener('click', function (ev) {
+    if (ev.target && ev.target.classList.contains('chip-x')) {
+      const chip = ev.target.closest('.chip');
+      if (chip) {
+        selectedModels.delete(chip.getAttribute('data-m'));
+        renderModelPicker();
+      }
+    }
+  });
+})();
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadGroupOptions();
+  loadModelOptions();
+})();
+</script>
+</body>
+</html>

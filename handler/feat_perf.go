@@ -12,6 +12,9 @@ import (
 	"api-gateway/model"
 )
 
+// ServerVersion 由 main 注入当前版本号，供 /api/ops/perf 与 /api/public 返回
+var ServerVersion = "dev"
+
 const (
 	perfKeyEnabled  = "perf.enabled"
 	perfKeyMaxLoad  = "perf.max_load"
@@ -84,6 +87,7 @@ func PerfHandler(w http.ResponseWriter, r *http.Request) {
 		"mem_total_mb": memTotalMB,
 		"mem_used_mb":  memUsedMB,
 		"goroutines":   runtime.NumGoroutine(),
+		"version":      ServerVersion,
 	})
 }
 

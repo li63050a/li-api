@@ -42,6 +42,7 @@ func PublicHandler(w http.ResponseWriter, r *http.Request) {
 		"open_register": model.GetSetting().OpenRegister,
 		"site_name":     siteName,
 		"announcement":  announcement,
+		"version":       ServerVersion,
 	})
 }
 

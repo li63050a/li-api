@@ -3,59 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API 网关管理控制台</title>
+    <title>API 网关</title>
     <link rel="stylesheet" href="/common.css">
-    <style>
-        body { padding: 0; }
-        .login-wrap { min-height: 100vh; }
-
-        /* ---------- 介绍页（landing） ---------- */
-        .landing { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
-        .landing-nav {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 32px; background: var(--card); border-bottom: 1px solid var(--border);
-            position: sticky; top: 0; z-index: 90;
-        }
-        .landing-brand { display: flex; align-items: center; gap: 10px; }
-        .landing-name { font-size: 16px; font-weight: 600; color: var(--fg); }
-        .landing-sub { font-size: 12px; color: var(--fg-2); }
-        .landing-actions { display: flex; gap: 10px; }
-        .landing-container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
-        .landing-hero {
-            padding: 72px 24px 56px; text-align: center;
-            background: radial-gradient(620px 260px at 50% -40px, var(--primary-bg), transparent 70%);
-        }
-        .landing-title {
-            margin: 0 0 16px; font-size: 44px; line-height: 1.22; font-weight: 700; letter-spacing: .02em;
-            background: linear-gradient(120deg, var(--primary), #53a7ff);
-            -webkit-background-clip: text; background-clip: text; color: transparent;
-        }
-        .landing-slogan { margin: 0 auto 32px; max-width: 640px; font-size: 17px; color: var(--fg-2); }
-        .landing-cta { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
-        .btn-lg { padding: 9px 28px; font-size: 15px; border-radius: 8px; }
-        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; padding: 8px 0 72px; }
-        .feature-card {
-            background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-            padding: 24px; box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s;
-        }
-        .feature-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); }
-        .feature-icon {
-            width: 44px; height: 44px; border-radius: 10px; margin-bottom: 14px;
-            background: linear-gradient(135deg, var(--primary), #53a7ff); color: #fff;
-            display: flex; align-items: center; justify-content: center; font-size: 22px;
-        }
-        .feature-card h3 { margin: 0 0 8px; font-size: 16px; }
-        .feature-card p { margin: 0; color: var(--fg-2); font-size: 13px; line-height: 1.7; }
-        .landing-footer {
-            margin-top: auto; text-align: center; padding: 22px; color: var(--fg-3); font-size: 13px;
-            border-top: 1px solid var(--border);
-        }
-
-        /* ---------- 登录卡（返回首页 / 注册开关） ---------- */
-        .auth-back { margin-top: 16px; text-align: center; font-size: 13px; }
-    </style>
 </head>
-<body>
+<body class="site-page">
+    <!-- 公共顶栏 -->
+    <nav class="site-nav" id="siteNav">
+        <a class="site-brand" href="/" title="返回首页">
+            <svg class="site-logo" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+                <defs>
+                    <linearGradient id="gwLogoGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#1677ff"/>
+                        <stop offset="1" stop-color="#53a7ff"/>
+                    </linearGradient>
+                </defs>
+                <rect width="32" height="32" rx="7" fill="url(#gwLogoGrad)"/>
+                <path d="M9 16h14M16 9v14" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+            </svg>
+            <span class="site-name" id="siteName">API 网关</span>
+        </a>
+        <div class="site-right">
+            <div class="site-links">
+                <a class="site-link" href="/">主页</a>
+                <a class="site-link" href="#" onclick="return navConsole()">控制台</a>
+                <a class="site-link" href="/models_square.html">模型广场</a>
+                <a class="site-link" href="#" onclick="return navRanking()">排行榜</a>
+                <a class="site-link" href="/about.html">关于</a>
+            </div>
+            <div class="landing-actions">
+                <button class="btn btn-default" onclick="showAuth()">登录</button>
+                <button class="btn btn-primary js-register-cta" onclick="showAuth()">创建账户</button>
+            </div>
+        </div>
+    </nav>
+
     <!-- 初始化页（全新安装，无任何用户时显示） -->
     <div id="setup" class="login-wrap" style="display:none">
         <div class="login-card">
@@ -82,22 +63,8 @@
         </div>
     </div>
 
-    <!-- 介绍页（未登录默认首页） -->
+    <!-- 介绍页（主页，未登录默认首页） -->
     <div id="landing" class="landing" style="display:none">
-        <nav class="landing-nav">
-            <div class="landing-brand">
-                <div class="brand-logo">API</div>
-                <div>
-                    <div class="landing-name" id="lNavName">API 网关</div>
-                    <div class="landing-sub">管理控制台</div>
-                </div>
-            </div>
-            <div class="landing-actions">
-                <button class="btn btn-default" onclick="showAuth()">登录</button>
-                <button class="btn btn-primary js-register" onclick="showAuth()">创建账户</button>
-            </div>
-        </nav>
-
         <div class="landing-container">
             <div class="announce-bar" id="landingAnnounce" style="display:none">
                 <span id="landingAnnounceText"></span>
@@ -110,7 +77,7 @@
             <p class="landing-slogan">一站式多模型聚合 · AI 网关管理平台，统一接入、透明计费、实时统计、安全可控。</p>
             <div class="landing-cta">
                 <button class="btn btn-primary btn-lg" onclick="showAuth()">登录</button>
-                <button class="btn btn-default btn-lg js-register" onclick="showAuth()">创建账户</button>
+                <button class="btn btn-default btn-lg js-register-cta" onclick="showAuth()">创建账户</button>
             </div>
         </section>
 
@@ -153,10 +120,17 @@
                 </div>
             </div>
             <div class="form-group">
-                <input id="u" placeholder="用户名" />
+                <input id="u" placeholder="用户名" autocomplete="username" />
             </div>
             <div class="form-group">
-                <input id="p" type="password" placeholder="密码" />
+                <input id="p" type="password" placeholder="密码" autocomplete="current-password" />
+            </div>
+            <div class="form-group" id="capRow" style="display:none">
+                <div class="captcha-box">
+                    <span class="captcha-q" id="capQ"></span>
+                    <button class="btn btn-link" type="button" onclick="loadCaptcha()" title="换一题">⟳</button>
+                </div>
+                <input id="cap" placeholder="验证码答案" autocomplete="off" />
             </div>
             <div class="login-btns">
                 <button class="btn btn-primary" onclick="login()">登录</button>
@@ -167,7 +141,7 @@
         </div>
     </div>
 
-    <!-- 主界面 -->
+    <!-- 主界面（root 管理员控制台） -->
     <div id="app" class="layout" style="display:none">
         <!-- 左侧边栏 -->
         <aside class="sidebar">
@@ -187,16 +161,18 @@
                 <div class="menu-group">管理</div>
                 <a class="menu-item" href="#" data-page="feat_channels" data-root="1" onclick="return nav('feat_channels','渠道',this)"><span class="mi">⇄</span><span class="mi-label">渠道</span></a>
                 <a class="menu-item" href="#" data-page="feat_tokens" data-root="1" onclick="return nav('feat_tokens','令牌',this)"><span class="mi">⬡</span><span class="mi-label">令牌</span></a>
-                <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型',this)"><span class="mi">♢</span><span class="mi-label">模型</span></a>
                 <a class="menu-item" href="#" data-page="feat_users" data-root="1" onclick="return nav('feat_users','用户',this)"><span class="mi">◉</span><span class="mi-label">用户</span></a>
+
+                <div class="menu-group">模型</div>
+                <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型',this)"><span class="mi">♢</span><span class="mi-label">模型</span></a>
+                <a class="menu-item" href="#" data-page="feat_testchat" onclick="return nav('feat_testchat','模型测试',this)"><span class="mi">✎</span><span class="mi-label">模型测试</span></a>
+                <a class="menu-item" href="#" data-page="feat_chat" data-root="1" onclick="return nav('feat_chat','聊天',this)"><span class="mi">✉</span><span class="mi-label">聊天</span></a>
 
                 <div class="menu-group">消费</div>
                 <a class="menu-item" href="#" data-page="feat_stats" data-root="1" onclick="return nav('feat_stats','消费统计',this)"><span class="mi">⌁</span><span class="mi-label">消费统计</span></a>
                 <a class="menu-item" href="#" data-page="feat_wallet" onclick="return nav('feat_wallet','钱包',this)"><span class="mi">⟳</span><span class="mi-label">钱包</span></a>
                 <a class="menu-item" href="#" data-page="feat_plans" onclick="return nav('feat_plans','订阅',this)"><span class="mi">⌾</span><span class="mi-label">订阅</span></a>
                 <a class="menu-item" href="#" data-page="feat_redemptions" data-root="1" onclick="return nav('feat_redemptions','兑换码',this)"><span class="mi">⟲</span><span class="mi-label">兑换码</span></a>
-                <a class="menu-item" href="#" data-page="feat_testchat" onclick="return nav('feat_testchat','模型测试',this)"><span class="mi">✎</span><span class="mi-label">模型测试</span></a>
-                <a class="menu-item" href="#" data-page="feat_chat" data-root="1" onclick="return nav('feat_chat','聊天',this)"><span class="mi">✉</span><span class="mi-label">聊天</span></a>
 
                 <div class="menu-group">系统</div>
                 <a class="menu-item" href="#" data-page="console" onclick="return nav('console','个人中心',this)"><span class="mi">☺</span><span class="mi-label">个人中心</span></a>
@@ -205,7 +181,7 @@
                     <div class="submenu">
                         <a class="menu-item" href="#" data-page="feat_site" data-root="1" onclick="return nav('feat_site','站点与品牌',this)"><span class="mi">◈</span><span class="mi-label">站点与品牌</span></a>
                         <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','认证与登录',this)"><span class="mi">⊕</span><span class="mi-label">认证与登录</span></a>
-                        <a class="menu-item" href="#" data-page="feat_wallet" onclick="return nav('feat_wallet','计费与支付',this)"><span class="mi">¥</span><span class="mi-label">计费与支付</span></a>
+                        <a class="menu-item" href="#" data-page="feat_billing_settings" data-root="1" onclick="return nav('feat_billing_settings','计费与支付',this)"><span class="mi">¥</span><span class="mi-label">计费与支付</span></a>
                         <a class="menu-item" href="#" data-page="feat_models" data-root="1" onclick="return nav('feat_models','模型与路由',this)"><span class="mi">◇</span><span class="mi-label">模型与路由</span></a>
                         <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','安全与限额',this)"><span class="mi">✜</span><span class="mi-label">安全与限额</span></a>
                         <a class="menu-item" href="#" data-page="feat_notify" data-root="1" onclick="return nav('feat_notify','控制台内容',this)"><span class="mi">▣</span><span class="mi-label">控制台内容</span></a>
@@ -213,20 +189,17 @@
                     </div>
                 </div>
                 <a class="menu-item" href="#" data-page="feat_system_info" data-root="1" onclick="return nav('feat_system_info','系统信息',this)"><span class="mi">◎</span><span class="mi-label">系统信息</span></a>
+                <a class="menu-item" href="#" data-page="feat_server" data-root="1" onclick="return nav('feat_server','服务器',this)"><span class="mi">⬢</span><span class="mi-label">服务器</span></a>
                 <a class="menu-item" href="#" data-page="feat_about" onclick="return nav('feat_about','关于',this)"><span class="mi">ℹ</span><span class="mi-label">关于</span></a>
 
                 <div class="menu-group">更多</div>
                 <a class="menu-item" href="#" data-page="feat_sync" data-root="1" onclick="return nav('feat_sync','上游同步',this)"><span class="mi">⇅</span><span class="mi-label">上游同步</span></a>
                 <a class="menu-item" href="#" data-page="feat_tasks" data-root="1" onclick="return nav('feat_tasks','系统任务',this)"><span class="mi">⚡</span><span class="mi-label">系统任务</span></a>
                 <a class="menu-item" href="#" data-page="feat_channelhealth" data-root="1" onclick="return nav('feat_channelhealth','渠道健康',this)"><span class="mi">♥</span><span class="mi-label">渠道健康</span></a>
-                <a class="menu-item" href="#" data-page="feat_batchtoken" data-root="1" onclick="return nav('feat_batchtoken','批量令牌',this)"><span class="mi">▤</span><span class="mi-label">批量令牌</span></a>
                 <a class="menu-item" href="#" data-page="feat_audit" data-root="1" onclick="return nav('feat_audit','审计日志',this)"><span class="mi">☷</span><span class="mi-label">审计日志</span></a>
                 <a class="menu-item" href="#" data-page="feat_cost" data-root="1" onclick="return nav('feat_cost','费用明细',this)"><span class="mi">≌</span><span class="mi-label">费用明细</span></a>
                 <a class="menu-item" href="#" data-page="feat_overrides" data-root="1" onclick="return nav('feat_overrides','倍率覆盖',this)"><span class="mi">⨯</span><span class="mi-label">倍率覆盖</span></a>
-                <a class="menu-item" href="#" data-page="feat_invoice" data-root="1" onclick="return nav('feat_invoice','发票管理',this)"><span class="mi">⌸</span><span class="mi-label">发票管理</span></a>
                 <a class="menu-item" href="#" data-page="feat_groups" data-root="1" onclick="return nav('feat_groups','分组',this)"><span class="mi">▦</span><span class="mi-label">分组</span></a>
-                <a class="menu-item" href="#" data-page="feat_aliases" data-root="1" onclick="return nav('feat_aliases','模型别名',this)"><span class="mi">⧉</span><span class="mi-label">模型别名</span></a>
-                <a class="menu-item" href="#" data-page="feat_vmodels" data-root="1" onclick="return nav('feat_vmodels','虚拟模型',this)"><span class="mi">⌬</span><span class="mi-label">虚拟模型</span></a>
                 <a class="menu-item" href="#" data-page="feat_security" onclick="return nav('feat_security','安全设置',this)"><span class="mi">❖</span><span class="mi-label">安全设置</span></a>
                 <a class="menu-item" href="#" data-page="feat_notify" data-root="1" onclick="return nav('feat_notify','通知',this)"><span class="mi">≔</span><span class="mi-label">通知</span></a>
                 <a class="menu-item" href="#" data-page="feat_team" data-root="1" onclick="return nav('feat_team','团队',this)"><span class="mi">➤</span><span class="mi-label">团队</span></a>
@@ -284,6 +257,13 @@
 
     // 公共信息缓存（来自 /api/public，含 needs_setup / open_register / site_name / announcement）
     var __pub = { needs_setup:false, open_register:true, site_name:'API 网关', announcement:'' };
+    var __cap = null; // 验证码状态 {id}
+
+    // 顶栏显隐：进入管理控制台后隐藏公共顶栏
+    function setShell(show){
+        const nav = document.getElementById('siteNav');
+        if(nav) nav.style.display = show ? '' : 'none';
+    }
 
     // 智能门控：决定首次访问展示 控制台 / 初始化页 / 介绍页
     async function boot(){
@@ -307,19 +287,22 @@
     }
 
     function showSetup(){
+        setShell(true);
         document.getElementById('landing').style.display='none';
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='none';
         document.getElementById('setupSub').textContent = '创建「' + (__pub.site_name || 'API 网关') + '」的第一个管理员账户';
+        document.getElementById('siteName').textContent = __pub.site_name || 'API 网关';
         document.getElementById('setup').style.display='flex';
     }
 
     function showLanding(){
+        setShell(true);
         document.getElementById('setup').style.display='none';
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='none';
         const name = __pub.site_name || 'API 网关';
-        document.getElementById('lNavName').textContent = name;
+        document.getElementById('siteName').textContent = name;
         document.getElementById('lHeroName').textContent = name;
         document.getElementById('lFooter').textContent = name + ' · 管理控制台';
         applyRegisterVisibility();
@@ -343,26 +326,78 @@
     }
 
     function showAuth(){
+        setShell(true);
         document.getElementById('landing').style.display='none';
         document.getElementById('setup').style.display='none';
         document.getElementById('app').style.display='none';
         applyRegisterVisibility();
+        document.getElementById('authMsg').textContent = '';
+        loadCaptcha();
         document.getElementById('auth').style.display='flex';
     }
 
-    // open_register=false 时隐藏所有注册入口（介绍页 CTA + 登录卡）
+    // open_register=false 时：注册按钮置灰禁用（显示 tooltip），登录卡内的注册按钮直接隐藏
     function applyRegisterVisibility(){
         const on = __pub.open_register !== false;
+        document.querySelectorAll('.js-register-cta').forEach(function(b){
+            if(on){
+                b.disabled = false;
+                b.removeAttribute('title');
+            }else{
+                b.disabled = true;
+                b.title = '注册已关闭';
+            }
+        });
         document.querySelectorAll('.js-register').forEach(function(b){
             b.style.display = on ? '' : 'none';
         });
     }
 
+    // 验证码：获取题目并渲染（服务端无此接口时自动降级隐藏）
+    async function loadCaptcha(){
+        __cap = null;
+        const row = document.getElementById('capRow');
+        if(!row) return;
+        try{
+            const r = await fetch('/api/captcha', {headers:{Accept:'application/json'}});
+            if(!r.ok) throw new Error('no captcha');
+            const d = await r.json();
+            const id = d.captcha_id || d.id;
+            const q = d.question || d.expression || d.text || d.q || d.prompt;
+            if(!id || !q){ row.style.display='none'; return; }
+            __cap = { id: id };
+            document.getElementById('capQ').textContent = String(q);
+            document.getElementById('cap').value = '';
+            row.style.display = '';
+        }catch(e){
+            row.style.display = 'none';
+        }
+    }
+
+    function authBody(extra){
+        const body = Object.assign({}, extra);
+        if(__cap){
+            body.captcha_id = __cap.id;
+            body.captcha_answer = v('cap');
+        }
+        return body;
+    }
+
     async function login(){
         const r = await fetch('/api/user/login', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({username:v('u'), password:v('p')})});
+            body: JSON.stringify(authBody({username:v('u'), password:v('p')}))});
+        if(r.status === 403){
+            document.getElementById('authMsg').textContent = '验证码错误，已刷新，请重试';
+            loadCaptcha();
+            return;
+        }
         if(!r.ok){ document.getElementById('authMsg').textContent='登录失败'; return; }
-        const d = await r.json(); setToken(d.token); enterApp();
+        const d = await r.json();
+        if(d.need_2fa){
+            document.getElementById('authMsg').textContent='该账户已开启两步验证，请通过 2FA 校验';
+            return;
+        }
+        setToken(d.token); enterApp();
     }
     async function register(){
         if(__pub.open_register === false){
@@ -370,7 +405,12 @@
             return;
         }
         const r = await fetch('/api/user/register', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({username:v('u'), password:v('p')})});
+            body: JSON.stringify(authBody({username:v('u'), password:v('p')}))});
+        if(r.status === 403){
+            document.getElementById('authMsg').textContent = '验证码错误，已刷新，请重试';
+            loadCaptcha();
+            return;
+        }
         if(!r.ok){ document.getElementById('authMsg').textContent='注册失败：'+(await r.text()); return; }
         const d = await r.json(); setToken(d.token); enterApp();
     }
@@ -399,12 +439,50 @@
     }
     function logout(){ clearToken(); location.reload(); }
 
-    // 侧边栏折叠（icon-only rail，持久化）
+    // 公共顶栏：控制台（root 进管理控制台，普通用户进个人中心，未登录进登录页）
+    async function navConsole(){
+        if(!getToken()){ showAuth(); return false; }
+        try{
+            const r = await api('/api/user/self');
+            if(!r.ok){ clearToken(); showAuth(); return false; }
+            const d = await r.json();
+            if(d.role === 'root'){ enterApp(); return false; }
+            location.href = '/console.html';
+        }catch(e){
+            showAuth();
+        }
+        return false;
+    }
+
+    // 公共顶栏：排行榜（需登录，未登录先登录）
+    async function navRanking(){
+        if(!getToken()){ showAuth(); return false; }
+        try{
+            const r = await api('/api/user/self');
+            if(!r.ok){ clearToken(); showAuth(); return false; }
+            location.href = '/feat_rankings.html';
+        }catch(e){
+            showAuth();
+        }
+        return false;
+    }
+
+    // 侧边栏折叠（icon-only rail，持久化；首次访问默认折叠）
     function toggleSidebar(){
         const app = document.getElementById('app');
         app.classList.toggle('collapsed');
         localStorage.setItem('gw_sidebar', app.classList.contains('collapsed') ? '1' : '0');
         setTimeout(fitFrame, 240);
+    }
+    function isNarrowWindow(){
+        return window.innerWidth < 900;
+    }
+    function collapseSidebar(){
+        const app = document.getElementById('app');
+        if(app && !app.classList.contains('collapsed')){
+            app.classList.add('collapsed');
+            localStorage.setItem('gw_sidebar', '1');
+        }
     }
     function toggleSub(el){
         const app = document.getElementById('app');
@@ -426,41 +504,42 @@
     document.addEventListener('click', function(ev){
         const m = document.getElementById('userMenu');
         if(m && !m.contains(ev.target)) m.classList.remove('open');
+        // 点击侧边栏外部（内容区）时关闭侧边栏
+        const app = document.getElementById('app');
+        if(app && app.style.display !== 'none' && !app.classList.contains('collapsed')){
+            if(!ev.target.closest('.sidebar') && !ev.target.closest('#sideToggle')){
+                collapseSidebar();
+            }
+        }
     });
 
     async function enterApp(){
         const r = await api('/api/user/self');
         if(!r.ok){ clearToken(); location.reload(); return; }
         const d = await r.json();
+        // 非 root：跳转个人中心
+        if(d.role !== 'root'){ location.href = '/console.html'; return; }
+        setShell(false);
         document.getElementById('setup').style.display='none';
         document.getElementById('landing').style.display='none';
         document.getElementById('auth').style.display='none';
         document.getElementById('app').style.display='flex';
-        const isRoot = d.role === 'root';
         document.getElementById('who').textContent = d.username;
         document.getElementById('avatar').textContent = (d.username || '?').slice(0, 1).toUpperCase();
         const tag = document.getElementById('roleTag');
-        tag.textContent = isRoot ? '管理员' : '用户';
-        tag.classList.toggle('role-tag-user', !isRoot);
-        if(!isRoot){
-            document.querySelectorAll('#menu .menu-item[data-root]').forEach(el=>el.style.display='none');
-            // 隐藏无可见子项的子菜单
-            document.querySelectorAll('#menu .menu-sub').forEach(ms=>{
-                let any = false;
-                ms.querySelectorAll('.submenu .menu-item').forEach(a=>{ if(a.style.display !== 'none') any = true; });
-                if(!any) ms.style.display = 'none';
-            });
-        }
-        // 恢复折叠状态
-        if(localStorage.getItem('gw_sidebar') === '1'){
+        tag.textContent = '管理员';
+        tag.classList.remove('role-tag-user');
+        // 恢复折叠状态：默认折叠，首次访问（无记录）亦折叠
+        if(localStorage.getItem('gw_sidebar') !== '0'){
             document.getElementById('app').classList.add('collapsed');
+            localStorage.setItem('gw_sidebar', '1');
         }
         // 默认进入仪表盘
         document.querySelectorAll('#menu .menu-item').forEach(a=>a.classList.remove('active'));
         const first = document.querySelector('#menu .menu-item[data-page="feat_usage"]');
         if(first) first.classList.add('active');
         loadExt('feat_usage', '仪表盘');
-        if(isRoot) check2FASecurity();
+        check2FASecurity();
     }
     boot();
 
@@ -534,6 +613,8 @@
         }
         document.getElementById('pageTitle').textContent = title;
         loadExt(page);
+        // 窄窗口点击菜单项后自动折叠侧边栏
+        if(isNarrowWindow()) collapseSidebar();
         return false;
     }
     function loadExt(name){

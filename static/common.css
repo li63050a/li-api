@@ -356,7 +356,7 @@ code {
 
 /* ---------- 登录页 ---------- */
 .login-wrap {
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    min-height: calc(100vh - 57px); display: flex; align-items: center; justify-content: center;
     background: var(--bg); padding: 20px;
 }
 .login-card {
@@ -381,4 +381,123 @@ code {
 .announce-close {
     position: absolute; top: 50%; right: 10px; transform: translateY(-50%);
     border: none; background: none; color: var(--tag-blue-fg); font-size: 20px; cursor: pointer; line-height: 1; padding: 4px;
+}
+
+/* ---------- 模态框 ---------- */
+.modal-mask {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.modal {
+    width: 440px; max-width: 92vw; background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 20px;
+}
+.modal h3 { margin: 0 0 14px; }
+.modal .form-group { align-items: center; }
+.modal .form-group > label { flex: 0 0 96px; font-size: 13px; color: var(--fg-2); }
+
+/* ---------- Tab 页（模型统一页） ---------- */
+.tabs { display: flex; gap: 6px; border-bottom: 2px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
+.tab {
+    padding: 8px 16px; border: 1px solid var(--border); border-bottom: none;
+    border-radius: 8px 8px 0 0; background: var(--card); color: var(--fg-2);
+    cursor: pointer; font-size: 14px; font-family: inherit;
+}
+.tab:hover { color: var(--primary); }
+.tab.active { color: var(--primary); border-color: var(--primary); font-weight: 600; }
+.tab-body iframe { display: block; width: 100%; border: 0; background: transparent; min-height: 200px; }
+
+/* ---------- 公共站点外壳（public site shell） ---------- */
+body.site-page { padding: 0; }
+.site-nav {
+    height: 57px; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 0 24px; background: var(--card); color: var(--fg);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+}
+.site-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--fg); min-width: 0; }
+.site-brand:hover { color: var(--fg); }
+.site-logo { width: 28px; height: 28px; border-radius: 7px; display: block; flex: 0 0 28px; }
+.site-name { font-size: 16px; font-weight: 600; color: var(--fg); white-space: nowrap; }
+.site-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.site-links { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.site-link {
+    display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 7px;
+    color: var(--fg-2); text-decoration: none; font-size: 14px; white-space: nowrap;
+    transition: color .15s, background .15s;
+}
+.site-link:hover { color: var(--primary); background: var(--primary-bg); }
+.site-link.active { color: var(--primary); font-weight: 600; }
+.landing-actions { display: flex; gap: 10px; margin-left: 6px; }
+.landing-actions .btn:disabled { background: var(--th-bg); border-color: var(--border-strong); color: var(--fg-3); opacity: 1; cursor: not-allowed; }
+
+/* ---------- 介绍页（landing / 主页） ---------- */
+.landing { min-height: calc(100vh - 57px); display: flex; flex-direction: column; background: var(--bg); }
+.landing-container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+.landing-hero {
+    padding: 64px 24px 48px; text-align: center;
+    background: radial-gradient(620px 260px at 50% -40px, var(--primary-bg), transparent 70%);
+}
+.landing-title {
+    margin: 0 0 16px; font-size: 44px; line-height: 1.22; font-weight: 700; letter-spacing: .02em;
+    background: linear-gradient(120deg, var(--primary), #53a7ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.landing-slogan { margin: 0 auto 32px; max-width: 640px; font-size: 17px; color: var(--fg-2); }
+.landing-cta { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.btn-lg { padding: 9px 28px; font-size: 15px; border-radius: 8px; }
+.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; padding: 8px 0 72px; }
+.feature-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s;
+}
+.feature-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); }
+.feature-icon {
+    width: 44px; height: 44px; border-radius: 10px; margin-bottom: 14px;
+    background: linear-gradient(135deg, var(--primary), #53a7ff); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+}
+.feature-card h3 { margin: 0 0 8px; font-size: 16px; }
+.feature-card p { margin: 0; color: var(--fg-2); font-size: 13px; line-height: 1.7; }
+.landing-footer {
+    margin-top: auto; text-align: center; padding: 22px; color: var(--fg-3); font-size: 13px;
+    border-top: 1px solid var(--border);
+}
+.auth-back { margin-top: 16px; text-align: center; font-size: 13px; }
+
+/* ---------- 验证码 ---------- */
+.captcha-box {
+    display: flex; align-items: center; gap: 8px; flex: 1 1 100%;
+    padding: 8px 11px; border: 1px solid var(--border-strong); border-radius: 6px;
+    background: var(--th-bg); color: var(--fg);
+}
+.captcha-q { font-size: 15px; font-weight: 600; letter-spacing: .06em; }
+.captcha-box .btn-link { padding: 0 4px; font-size: 15px; }
+
+/* ---------- 关于页 ---------- */
+.about-card { max-width: 760px; margin: 32px auto; }
+.about-card h2 { margin: 0 0 12px; }
+.about-card h3 { margin: 22px 0 10px; }
+.about-card p { color: var(--fg-2); line-height: 1.8; }
+.about-info { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.about-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.about-label { flex: 0 0 90px; color: var(--fg-2); font-size: 14px; padding-top: 2px; }
+.about-row > .about-val { color: var(--fg); }
+.link-blue { color: var(--primary); text-decoration: none; }
+.link-blue:hover { color: var(--primary-hover); text-decoration: underline; }
+
+/* ---------- 模型广场 ---------- */
+.model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.model-chip {
+    background: var(--th-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: var(--fg); word-break: break-all;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (max-width: 720px) {
+    .site-nav { padding: 0 12px; }
+    .site-links { order: 3; flex-basis: 100%; justify-content: center; padding-bottom: 6px; }
+    .site-nav { height: auto; padding-top: 8px; flex-wrap: wrap; }
+    .landing-title { font-size: 32px; }
 }

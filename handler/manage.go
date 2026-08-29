@@ -34,6 +34,35 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/admin/users")
 
+	if strings.HasSuffix(path, "/2fa-reset") {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		id, ok := parseUID(strings.TrimSuffix(path, "/2fa-reset"), "/")
+		if !ok {
+			http.Error(w, "Invalid ID", http.StatusBadRequest)
+			return
+		}
+		var username string
+		for _, u := range model.GetAllUsers() {
+			if u.ID == id {
+				username = u.Username
+				break
+			}
+		}
+		if username == "" {
+			http.Error(w, "user not found", http.StatusBadRequest)
+			return
+		}
+		if err := model.SetUser2FA(username, "", false); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"success": "true"})
+		return
+	}
+
 	switch r.Method {
 	case "GET":
 		json.NewEncoder(w).Encode(model.GetAllUsers())
@@ -156,8 +185,8 @@ func ModelPresetsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"model_ratio":       model.DefaultModelRatio(),
-		"completion_ratio":  model.DefaultCompletionRatio(),
+		"model_ratio":      model.DefaultModelRatio(),
+		"completion_ratio": model.DefaultCompletionRatio(),
 	})
 }
 

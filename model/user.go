@@ -306,7 +306,12 @@ func UpdateUser(id int, patch User) error {
 	defer userMu.Unlock()
 	for i := range users {
 		if users[i].ID == id {
-			if patch.Username != "" {
+			if patch.Username != "" && patch.Username != users[i].Username {
+				for j := range users {
+					if j != i && users[j].Username == patch.Username {
+						return errors.New("username already exists")
+					}
+				}
 				users[i].Username = patch.Username
 			}
 			if patch.Role != "" {

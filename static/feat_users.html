@@ -12,6 +12,7 @@
   <div class="topbar">
     <h2>用户管理</h2>
     <div style="display:flex;gap:8px">
+      <button class="btn btn-success" onclick="goAddUser()">新增用户</button>
       <button class="btn btn-warning" onclick="toggleBatch()">批量创建</button>
       <button class="btn btn-primary" onclick="loadUsers()">刷新</button>
     </div>
@@ -29,18 +30,6 @@
   </div>
 
   <div class="card">
-    <h3>创建用户</h3>
-    <div class="form-group">
-      <input id="uName" placeholder="用户名">
-      <input id="uPwd" type="password" placeholder="密码">
-      <select id="uRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
-      <input id="uQuota" type="number" placeholder="额度(token, -1 不限)" value="-1">
-      <input id="uRate" type="number" placeholder="每分钟限流(0=不限)" value="0">
-      <button class="btn btn-success" onclick="addUser()">创建用户</button>
-    </div>
-  </div>
-
-  <div class="card">
     <h3>用户列表</h3>
     <table>
       <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>已用/额度</th><th>操作</th></tr></thead>
@@ -49,18 +38,118 @@
   </div>
 </div>
 
+<div class="modal-mask" id="userModal" style="display:none" onclick="if(event.target===this)closeUserModal()">
+  <div class="modal">
+    <h3>管理用户 <span id="mId" class="muted small"></span></h3>
+    <div class="form-group"><label>用户名</label><input id="mName"></div>
+    <div class="form-group"><label>密码</label><input id="mPwd" type="password" placeholder="留空则不修改"></div>
+    <div class="form-group"><label>剩余额度</label><input id="mQuota" type="number" placeholder="-1 表示不限"></div>
+    <div class="form-group"><label>身份</label>
+      <select id="mRole"><option value="user">普通用户</option><option value="root">管理员</option></select>
+    </div>
+    <div class="form-group"><label>状态</label>
+      <select id="mStatus"><option value="1">启用</option><option value="0">禁用</option></select>
+    </div>
+    <div class="form-group" style="justify-content:flex-end">
+      <button class="btn btn-primary" onclick="saveUser()">保存</button>
+      <button class="btn btn-warning" onclick="resetUser2FA()">关闭 2FA</button>
+      <button class="btn btn-default" onclick="closeUserModal()">取消</button>
+    </div>
+    <p id="mMsg" class="msg" style="margin:8px 0 0"></p>
+  </div>
+</div>
+
 <script>
-async function loadUsers(){ const res=await api('/admin/users'); if(!res.ok)return; const us=await res.json();
+function goAddUser(){
+  var p = window.parent;
+  try{
+    if(p && p !== window && typeof p.nav === 'function'){
+      p.nav('feat_user_add', '新增用户', p.document.querySelector('#menu .menu-item[data-page="feat_users"]'));
+      return;
+    }
+  }catch(e){ /* 跨域忽略 */ }
+  location.href = '/feat_user_add.html';
+}
+
+async function loadUsers(){ const res=await api('/admin/users'); if(!res.ok)return; const us=await res.json(); userList=us;
   document.getElementById('userTable').innerHTML=us.map(u=>`<tr><td>${u.id}</td><td>${escapeHtml(u.username)}</td><td>${u.role}</td>
     <td><span class="status ${u.status?'status-on':'status-off'}">${u.status?'启用':'禁用'}</span></td>
     <td>${escapeHtml(String(u.used))} / ${u.quota<0?'不限':escapeHtml(String(u.quota))}</td>
-    <td><button class="btn btn-link" onclick="toggleUser(${u.id},${u.status?0:1})">${u.status?'禁用':'启用'}</button>
+    <td><button class="btn btn-link" onclick="openManage(${u.id})">管理</button>
+    <button class="btn btn-link" onclick="toggleUser(${u.id},${u.status?0:1})">${u.status?'禁用':'启用'}</button>
     <button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button></td></tr>`).join(''); }
-async function addUser(){ const data={username:v('uName'),password:v('uPwd'),role:v('uRole'),quota:parseInt(v('uQuota'))||-1,rate_limit:parseInt(v('uRate'))||0};
-  const res=await api('/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  if(!res.ok){ alert('创建失败：'+(await res.text())); return; } loadUsers(); ['uName','uPwd'].forEach(i=>document.getElementById(i).value=''); }
 async function deleteUser(id){ if(!confirm('确认删除该用户？'))return; await api('/admin/users/'+id,{method:'DELETE'}); loadUsers(); }
 async function toggleUser(id,status){ await api('/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}); loadUsers(); }
+
+let editingUser=null;
+let userList=[];
+
+function openManage(id){
+  const u = userList.find(function(x){ return x.id === id; });
+  if(!u) return;
+  editingUser=u;
+  document.getElementById('mId').textContent='#'+u.id;
+  document.getElementById('mName').value=u.username||'';
+  document.getElementById('mPwd').value='';
+  document.getElementById('mRole').value=(u.role==='root')?'root':'user';
+  document.getElementById('mStatus').value=String(u.status===0?0:1);
+  document.getElementById('mQuota').value= u.quota<0 ? -1 : (u.quota - (u.used||0));
+  document.getElementById('mMsg').textContent='';
+  document.getElementById('userModal').style.display='flex';
+}
+
+function closeUserModal(){
+  document.getElementById('userModal').style.display='none';
+  editingUser=null;
+}
+
+async function saveUser(){
+  if(!editingUser) return;
+  const msg=document.getElementById('mMsg');
+  const data={
+    username:document.getElementById('mName').value.trim(),
+    role:document.getElementById('mRole').value,
+    status:parseInt(document.getElementById('mStatus').value,10)
+  };
+  const pwd=document.getElementById('mPwd').value;
+  if(pwd) data.password=pwd;
+  const quota=parseInt(document.getElementById('mQuota').value,10);
+  if(!isNaN(quota)){
+    data.quota = quota<0 ? -1 : (quota + (editingUser.used||0));
+  } else {
+    data.quota = -1;
+  }
+  if(!data.username){ msg.textContent='用户名不能为空'; msg.style.color='var(--danger)'; return; }
+  try{
+    const res=await api('/admin/users/'+editingUser.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    if(!res.ok){
+      let t=''; try{ const d=await res.json(); t=d.error||d.message||''; }catch(e){}
+      msg.textContent='保存失败：'+(t||res.status); msg.style.color='var(--danger)'; return;
+    }
+    msg.textContent='已保存'; msg.style.color='var(--success)';
+    closeUserModal();
+    loadUsers();
+  }catch(e){
+    msg.textContent='请求出错：'+(e.message||e); msg.style.color='var(--danger)';
+  }
+}
+
+async function resetUser2FA(){
+  if(!editingUser) return;
+  const msg=document.getElementById('mMsg');
+  if(!confirm('确认关闭用户 '+editingUser.username+' 的两步验证(2FA)？')) return;
+  try{
+    const res=await api('/admin/users/'+editingUser.id+'/2fa-reset',{method:'POST'});
+    if(res.ok){
+      msg.textContent='已关闭该用户的 2FA'; msg.style.color='var(--success)';
+    }else{
+      let t=''; try{ const d=await res.json(); t=d.error||d.message||''; }catch(e){}
+      msg.textContent='关闭失败：'+(t||res.status); msg.style.color='var(--danger)';
+    }
+  }catch(e){
+    msg.textContent='请求出错：'+(e.message||e); msg.style.color='var(--danger)';
+  }
+}
 
 function toggleBatch(){
   const c=document.getElementById('batchCard');

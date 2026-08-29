@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新增渠道</title>
+<link rel="stylesheet" href="/common.css">
+<script src="/common.js"></script>
+<style>
+.backbar {
+  display: flex; align-items: center; gap: 10px;
+  margin: -20px -20px 14px; padding: 8px 16px;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 30;
+}
+.backbar h2 { margin: 0; font-size: 16px; }
+.backbar .btn { flex: 0 0 auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="backbar">
+    <button class="btn btn-default" onclick="backToChannels()">← 返回</button>
+    <h2>新增渠道</h2>
+  </div>
+
+  <div class="card">
+    <div class="form-group">
+      <div class="field"><label>名称</label><input id="cName" placeholder="如 openai 主渠道"></div>
+      <div class="field"><label>接口类型</label>
+        <select id="cType">
+          <option value="openai">OpenAI</option>
+          <option value="compatible">OpenAI 兼容</option>
+          <option value="azure">Azure</option>
+        </select>
+      </div>
+      <div class="field"><label>API 地址</label><input id="cBaseURL" placeholder="如 https://api.openai.com"></div>
+    </div>
+    <div class="form-group">
+      <div class="field" style="flex:1 1 60%"><label>API 密钥</label><input id="cKeys" placeholder="上游密钥（逗号分隔，轮流使用）"></div>
+      <div class="field"><label>认证方式</label>
+        <select id="cAuthType">
+          <option value="bearer">Bearer</option>
+          <option value="header">Header</option>
+          <option value="query">Query</option>
+        </select>
+      </div>
+      <div class="field"><label>认证键名</label><input id="cAuthKey" placeholder="header/query 的键名"></div>
+    </div>
+    <div class="field" style="flex:1 1 100%">
+      <label>允许模型（从列表搜索选择，回车添加自定义）</label>
+      <div class="ms-box">
+        <div class="ms-chips" id="cChips"></div>
+        <input id="cModelFilter" placeholder="输入筛选，回车添加自定义模型">
+        <div class="ms-list" id="cModelList"></div>
+      </div>
+      <input type="hidden" id="cModels">
+    </div>
+    <div class="form-group" style="margin-top:8px">
+      <input id="cCustomModel" placeholder="自定义模型名（不在列表时手动输入，如 mygpt-pro）">
+      <button class="btn btn-default" onclick="addCustomModel()">添加自定义</button>
+      <button class="btn btn-primary" id="cFetchBtn" onclick="fetchChannelModels()">一键拉取模型</button>
+      <span class="muted small">支持输入 * 表示全部</span>
+    </div>
+    <div class="form-group">
+      <div class="field"><label>分组</label><select id="cGroup"><option value="default">default</option></select></div>
+      <div class="field"><label>优先级</label><input id="cPriority" type="number" placeholder="越大越优先" value="0"></div>
+      <div class="field"><label>权重</label><input id="cWeight" type="number" placeholder="同优先级负载比例" value="1"></div>
+    </div>
+    <div class="form-group">
+      <div class="field"><label>标签（逗号分隔）</label><input id="cTags" placeholder="如 主渠道,稳定"></div>
+      <label style="flex:0 0 auto"><input type="checkbox" id="cStatus" checked> 启用</label>
+    </div>
+    <div class="form-group">
+      <button class="btn btn-success" onclick="addChannel()">添加渠道</button>
+      <button class="btn btn-warning" onclick="testChannelForm()">测试连接</button>
+      <span id="cMsg" class="msg" style="min-height:18px"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let modelPool = [];
+let selModels = new Set();
+
+function showMsg(el, text, ok) {
+  el.textContent = text;
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+}
+
+function backToChannels(){
+  var p = window.parent;
+  try{
+    if(p && p !== window && typeof p.nav === 'function'){
+      p.nav('feat_channels', '渠道', p.document.querySelector('#menu .menu-item[data-page="feat_channels"]'));
+      return;
+    }
+  }catch(e){ /* 跨域忽略 */ }
+  history.back();
+}
+
+// 分组下拉：/admin/groups + 默认 default
+async function loadGroupOptions(){
+  const sel = $('cGroup');
+  const names = [];
+  try{
+    const res = await api('/admin/groups');
+    if(res.ok){
+      const d = await res.json();
+      (d.groups||[]).forEach(function(g){ if(g && g.name) names.push(g.name); });
+    }
+  }catch(e){ /* 分组接口不可用时仅保留 default */ }
+  if(names.indexOf('default') === -1) names.unshift('default');
+  sel.innerHTML = names.map(function(n){ return '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>'; }).join('');
+  sel.value = 'default';
+}
+
+// 模型池：/api/models_list + /api/models_public 合并去重
+async function loadModelOptions(){
+  const seen = {};
+  for (const p of ['/api/models_list', '/api/models_public']) {
+    try {
+      const r = await api(p);
+      if (!r.ok) continue;
+      const d = await r.json();
+      (d.models || []).forEach(function(m){
+        m = String(m).trim();
+        if (m && !seen[m]) { seen[m] = 1; modelPool.push(m); }
+      });
+    } catch (e) { /* 单个接口失败不影响 */ }
+  }
+  modelPool.sort();
+  renderModelPicker();
+}
+
+function renderModelPicker(){
+  const list = $('cModelList');
+  if (!list) return;
+  const q = ($('cModelFilter').value || '').trim().toLowerCase();
+  const opts = modelPool.filter(m => m.toLowerCase().indexOf(q) !== -1);
+  if (opts.length === 0) {
+    list.innerHTML = '<div class="ms-empty muted">无匹配模型，可输入后回车添加自定义</div>';
+  } else {
+    list.innerHTML = opts.map(m =>
+      '<div class="ms-item' + (selModels.has(m) ? ' selected' : '') + '" data-m="' + escapeHtml(m) + '" onclick="toggleModel(this)">' +
+      (selModels.has(m) ? '☑ ' : '☐ ') + escapeHtml(m) + '</div>'
+    ).join('');
+  }
+  renderChips();
+}
+
+function toggleModel(item){
+  const m = item.getAttribute('data-m');
+  if (selModels.has(m)) selModels.delete(m); else selModels.add(m);
+  renderModelPicker();
+}
+
+function renderChips(){
+  const box = $('cChips');
+  if (!box) return;
+  box.innerHTML = selModels.size
+    ? Array.from(selModels).map(m =>
+        '<span class="chip" data-m="' + escapeHtml(m) + '">' + escapeHtml(m) + '<button type="button" class="chip-x" title="移除">×</button></span>'
+      ).join('')
+    : '<span class="muted small">从下方列表点击选中，或输入后回车添加自定义模型</span>';
+  $('cModels').value = Array.from(selModels).join(',');
+}
+
+function addCustomModel(){
+  const val = $('cCustomModel').value.trim();
+  if (!val) { showMsg($('cMsg'), '请输入自定义模型名', false); return; }
+  if (!selModels.has(val)) {
+    selModels.add(val);
+    if (modelPool.indexOf(val) === -1) modelPool.push(val);
+  }
+  $('cCustomModel').value = '';
+  renderModelPicker();
+}
+
+async function fetchChannelModels() {
+  const msg = $('cMsg');
+  const btn = $('cFetchBtn');
+  const base = v('cBaseURL').trim();
+  const key = v('cKeys').trim();
+  if (!base || !key) { showMsg(msg, '请先填写 API 地址与 API 密钥', false); return; }
+  btn.disabled = true;
+  btn.textContent = '拉取中…';
+  msg.textContent = '';
+  try {
+    const r = await api('/api/models/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_url: base, api_key: key })
+    });
+    if (!r.ok) {
+      let t = '';
+      try { const d = await r.json(); t = d.error || d.message || ''; } catch (e) { /* 空响应 */ }
+      showMsg(msg, '拉取失败：' + (t || r.status), false);
+      return;
+    }
+    const d = await r.json().catch(() => ({}));
+    const arr = d.models || d.data || (Array.isArray(d) ? d : []);
+    const got = arr.map(x => (typeof x === 'string' ? x : (x.id || x.name || ''))).filter(Boolean);
+    if (!got.length) { showMsg(msg, '未拉取到模型', false); return; }
+    const seen = {};
+    modelPool.forEach(m => { seen[m] = 1; });
+    got.forEach(m => { if (!seen[m]) { seen[m] = 1; modelPool.push(m); } });
+    modelPool.sort();
+    selModels.clear();
+    renderModelPicker();
+    showMsg(msg, '拉取到 ' + got.length + ' 个模型，点击模型选中', true);
+  } catch (e) {
+    showMsg(msg, '拉取请求出错：' + (e.message || e), false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '一键拉取模型';
+  }
+}
+
+async function addChannel() {
+  const msg = $('cMsg');
+  const data = {
+    name: v('cName').trim(),
+    type: v('cType'),
+    base_url: v('cBaseURL').trim(),
+    keys: v('cKeys').trim(),
+    auth_type: v('cAuthType'),
+    auth_key: v('cAuthKey').trim(),
+    models: v('cModels').trim(),
+    group: v('cGroup').trim() || 'default',
+    priority: parseInt(v('cPriority')) || 0,
+    weight: parseInt(v('cWeight')) || 1,
+    tags: v('cTags').trim(),
+    status: document.getElementById('cStatus').checked ? 1 : 0
+  };
+  if (!data.name || !data.base_url || !data.keys) { showMsg(msg, '请填写名称、API 地址与 API 密钥', false); return; }
+  if (!data.models) { showMsg(msg, '请选择或添加至少一个模型', false); return; }
+  try {
+    const res = await api('/admin/channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      let t = '';
+      try { const d = await res.json(); t = d.error || d.message || ''; } catch (e) { /* 空响应 */ }
+      showMsg(msg, '添加失败：' + (t || res.status), false);
+      return;
+    }
+    showMsg(msg, '添加成功，即将返回渠道列表', true);
+    setTimeout(backToChannels, 800);
+  } catch (e) {
+    showMsg(msg, '请求出错：' + (e.message || e), false);
+  }
+}
+
+async function testChannelForm() {
+  const msg = $('cMsg');
+  msg.innerHTML = '<span class="muted"><span class="spin"></span>测试中…</span>';
+  const keys = v('cKeys').split(',').map(s => s.trim()).filter(Boolean);
+  const data = { base_url: v('cBaseURL'), auth_type: v('cAuthType'), auth_key: v('cAuthKey'), key: keys[0] || '' };
+  try {
+    const res = await apiWithTimeout('/admin/channels/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    let d = {}; try { d = await res.json(); } catch (e) { /* 空响应 */ }
+    if (res.ok && d.ok) {
+      const mc = d.models_count != null ? d.models_count : 0;
+      msg.innerHTML = '<span style="color:var(--success)">✓ 连通 ' + (d.status != null ? d.status : 200) + '，' + mc + ' 个模型' + (d.latency_ms != null ? '（' + d.latency_ms + 'ms）' : '') + '</span>';
+    } else {
+      msg.innerHTML = '<span style="color:var(--danger)">✗ ' + escapeHtml(d.error || d.message || ('HTTP ' + res.status)) + '</span>';
+    }
+  } catch (e) {
+    msg.innerHTML = '<span style="color:var(--danger)">✗ 测试请求出错：' + escapeHtml(e.message || e) + '</span>';
+  }
+}
+
+(function () {
+  const filter = $('cModelFilter');
+  filter.addEventListener('input', renderModelPicker);
+  filter.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      addCustomModel();
+    }
+  });
+  const chips = $('cChips');
+  chips.addEventListener('click', function (ev) {
+    if (ev.target && ev.target.classList.contains('chip-x')) {
+      const chip = ev.target.closest('.chip');
+      if (chip) {
+        selModels.delete(chip.getAttribute('data-m'));
+        renderModelPicker();
+      }
+    }
+  });
+})();
+
+(async () => {
+  try { await ensureAuth(); } catch (e) { return; }
+  loadGroupOptions();
+  loadModelOptions();
+})();
+</script>
+</body>
+</html>

@@ -58,3 +58,13 @@ func SaveVModel(vm VModel) error {
 func DelVModel(display string) error {
 	return KVDel("vmodel." + display)
 }
+
+// SetVModelPrompt 保存虚拟模型的系统提示词（KV 键 vprompt.<display>）
+func SetVModelPrompt(display, prompt string) error {
+	return KVSet("vprompt."+display, prompt)
+}
+
+// GetVModelPrompt 读取虚拟模型的系统提示词；未配置返回 ok=false
+func GetVModelPrompt(display string) (string, bool) {
+	return KVGet("vprompt." + display)
+}

@@ -89,12 +89,20 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cred struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		CaptchaID     string `json:"captcha_id"`
+		CaptchaAnswer string `json:"captcha_answer"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&cred); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
+	}
+	if v, ok := model.KVGet("security.captcha_login"); ok && v == "1" {
+		if !VerifyCaptcha(cred.CaptchaID, cred.CaptchaAnswer) {
+			writeError(w, http.StatusForbidden, "人机验证失败", "invalid_request_error")
+			return
+		}
 	}
 	if !VerifyTurnstile(r) {
 		authJSONError(w, http.StatusBadRequest, "captcha required")
@@ -144,14 +152,20 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cred struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Invite   string `json:"invite"`
-		Email    string `json:"email"`
-		Code     string `json:"code"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		Invite        string `json:"invite"`
+		Email         string `json:"email"`
+		Code          string `json:"code"`
+		CaptchaID     string `json:"captcha_id"`
+		CaptchaAnswer string `json:"captcha_answer"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&cred); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !VerifyCaptcha(cred.CaptchaID, cred.CaptchaAnswer) {
+		writeError(w, http.StatusForbidden, "人机验证失败", "invalid_request_error")
 		return
 	}
 	if !VerifyTurnstile(r) {

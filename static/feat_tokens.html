@@ -12,44 +12,48 @@
   <div class="topbar">
     <h2>令牌管理</h2>
     <div>
+      <button class="btn btn-success" onclick="goAddToken()">生成 API 密钥</button>
+      <button class="btn btn-warning" onclick="toggleBatchCard()">批量生成</button>
       <button class="btn btn-primary" onclick="loadTokens()">刷新</button>
       <button class="btn btn-default" onclick="exportTokens()">批量导出</button>
     </div>
   </div>
 
-  <div class="card">
-    <h3>生成 / 编辑令牌</h3>
+  <div class="card" id="batchCard" style="display:none">
+    <h3>批量生成 API 密钥</h3>
+    <p class="hint" style="margin-top:-4px">每行一个名称；填写下方分组 / 模型 / 额度 / RPM / TPM / 过期时间后批量生成。</p>
     <div class="form-group">
-      <input id="tName" placeholder="名称/备注">
-      <input id="tGroup" placeholder="分组" value="default">
-      <input id="tQuota" type="number" placeholder="额度(token数, 0 不限额)" value="-1">
-      <label><input type="checkbox" id="tUnlimited"> 不限</label>
-      <select id="tPreset">
+      <textarea id="btNames" rows="3" style="flex:1 1 100%" placeholder="每行一个名称"></textarea>
+    </div>
+    <div class="form-group">
+      <select id="btPreset">
         <option value="">套餐预设</option>
         <option value="free">免费</option>
         <option value="basic">基础</option>
         <option value="pro">高级</option>
         <option value="custom">自定义</option>
       </select>
+      <select id="btGroup"><option value="default">default</option></select>
+      <input id="btQuota" type="number" placeholder="额度(token数, -1 不限)" value="-1">
+      <label><input type="checkbox" id="btUnlimited"> 不限</label>
+      <input id="btRpm" type="number" placeholder="RPM(0=不限)" value="0">
+      <input id="btTpm" type="number" placeholder="TPM(0=不限)" value="0">
+      <input id="btExpiredAt" type="datetime-local" placeholder="过期时间">
     </div>
-    <p class="hint" style="margin-top:-4px">额度：0=不限额；套餐预设可一键填充额度/RPM/TPM</p>
-    <div class="form-group">
-      <input id="tRpm" type="number" placeholder="RPM(每分钟请求数, 0=不限)" value="0">
-      <input id="tTpm" type="number" placeholder="TPM(每分钟token数, 0=不限)" value="0">
-      <input id="tExpiredAt" type="datetime-local" placeholder="过期时间">
-      <button class="btn btn-success" onclick="addToken()">生成令牌</button>
-      <button id="tUpdateBtn" class="btn btn-warning" style="display:none" onclick="updateToken()">更新令牌</button>
-      <span id="editHint" style="color:var(--primary)"></span>
-    </div>
-    <p class="hint" style="margin-top:-4px">过期时间：-1=永不过期；RPM/TPM：0=不限</p>
     <div class="field" style="flex:1 1 100%">
-      <label>允许模型（留空=全部）</label>
+      <label>允许模型（留空=全部；输入筛选，回车添加自定义）</label>
       <div class="ms-box">
-        <div class="ms-chips" id="tModelsChips"></div>
-        <input id="tModelsFilter" placeholder="输入筛选，回车添加自定义模型">
-        <div class="ms-list" id="tModelsList"></div>
+        <div class="ms-chips" id="btChips"></div>
+        <input id="btModelFilter" placeholder="输入筛选，回车添加自定义模型">
+        <div class="ms-list" id="btModelList"></div>
       </div>
     </div>
+    <div class="form-group" style="margin-top:8px">
+      <button class="btn btn-success" onclick="batchTokens()">批量生成</button>
+      <button class="btn btn-success" id="btExportBtn" style="display:none" onclick="exportBatchJSON()">导出 JSON</button>
+      <span id="btMsg" class="msg"></span>
+    </div>
+    <div id="btResult"></div>
   </div>
 
   <div class="card">
@@ -61,105 +65,266 @@
   </div>
 </div>
 
-<script>
-let tokenList=[];
-let selectedModels=new Set();
-let allModels=[];
+<div class="modal-mask" id="tokenModal" style="display:none" onclick="if(event.target===this)closeTokenModal()">
+  <div class="modal">
+    <h3>编辑令牌 <span id="etKeyHint" class="muted small"></span></h3>
+    <div class="form-group"><label>名称 / 备注</label><input id="etName"></div>
+    <div class="form-group"><label>模型分组</label><select id="etGroup"><option value="default">default</option></select></div>
+    <div class="form-group">
+      <label style="flex:0 0 96px">允许模型</label>
+      <div class="ms-box" style="flex:1 1 100%">
+        <div class="ms-chips" id="etChips"></div>
+        <input id="etModelFilter" placeholder="输入筛选，回车添加自定义模型">
+        <div class="ms-list" id="etModelList"></div>
+      </div>
+    </div>
+    <div class="form-group"><label>额度</label><input id="etQuota" type="number" placeholder="-1 不限"></div>
+    <div class="form-group"><label style="flex:0 0 96px">不限额度</label><label style="flex:0 0 auto"><input type="checkbox" id="etUnlimited"> 不限</label></div>
+    <div class="form-group"><label>RPM</label><input id="etRpm" type="number" placeholder="0=不限"></div>
+    <div class="form-group"><label>TPM</label><input id="etTpm" type="number" placeholder="0=不限"></div>
+    <div class="form-group"><label>过期时间</label><input id="etExpiredAt" type="datetime-local"></div>
+    <div class="form-group" style="justify-content:flex-end">
+      <button class="btn btn-primary" onclick="saveToken()">保存</button>
+      <button class="btn btn-default" onclick="closeTokenModal()">取消</button>
+    </div>
+    <p id="etMsg" class="msg" style="margin:8px 0 0"></p>
+  </div>
+</div>
 
-const tPresets={
-  free:{quota:100000,rpm:0,tpm:0},
-  basic:{quota:1000000,rpm:60,tpm:60000},
-  pro:{quota:10000000,rpm:120,tpm:120000},
-  custom:{quota:'',rpm:'',tpm:''}
+<script>
+let tokenList = [];
+let modelPool = [];
+let batchModels = new Set();
+let editModels = new Set();
+let editingKey = null;
+let batchLastResult = null;
+
+const tPresets = {
+  free: { quota: 100000, rpm: 0, tpm: 0 },
+  basic: { quota: 1000000, rpm: 60, tpm: 60000 },
+  pro: { quota: 10000000, rpm: 120, tpm: 120000 },
+  custom: { quota: '', rpm: '', tpm: '' }
 };
 
-async function loadModelOptions(){
+function goAddToken(){
+  var p = window.parent;
   try{
-    const res=await api('/api/models_list');
-    if(!res.ok) return;
-    const d=await res.json();
-    allModels=(d.models||[]).filter(Boolean).sort();
-    renderModelPicker();
-  }catch(e){ /* 保持可手输 */ }
+    if(p && p !== window && typeof p.nav === 'function'){
+      p.nav('feat_token_add', '生成 API 密钥', p.document.querySelector('#menu .menu-item[data-page="feat_tokens"]'));
+      return;
+    }
+  }catch(e){ /* 跨域忽略 */ }
+  location.href = '/feat_token_add.html';
 }
 
-function renderModelPicker(){
-  const list=document.getElementById('tModelsList');
-  if(!list) return;
-  const q=(document.getElementById('tModelsFilter').value||'').trim().toLowerCase();
-  const opts=allModels.filter(m=>String(m).toLowerCase().indexOf(q)!==-1);
-  if(opts.length===0){
-    list.innerHTML='<div class="ms-empty muted">无匹配模型</div>';
-  }else{
-    list.innerHTML=opts.map(m=>
-      '<div class="ms-item'+(selectedModels.has(m)?' selected':'')+'" data-m="'+escapeHtml(m)+'" onclick="toggleModel(this)">'+
-      (selectedModels.has(m)?'☑ ':'☐ ')+escapeHtml(m)+'</div>'
-    ).join('');
-  }
-  renderChips();
+function toggleBatchCard(){
+  const c = document.getElementById('batchCard');
+  c.style.display = c.style.display === 'none' ? '' : 'none';
+  if(c.style.display !== 'none') c.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
-function toggleModel(item){
-  const m=item.getAttribute('data-m');
-  if(selectedModels.has(m)) selectedModels.delete(m); else selectedModels.add(m);
-  renderModelPicker();
-}
-
-function removeModel(m){
-  selectedModels.delete(m);
-  renderModelPicker();
-}
-
-function renderChips(){
-  const box=document.getElementById('tModelsChips');
-  if(!box) return;
-  box.innerHTML=Array.from(selectedModels).map(m=>
-    '<span class="chip" data-m="'+escapeHtml(m)+'">'+escapeHtml(m)+'<button type="button" class="chip-x" title="移除">×</button></span>'
-  ).join('');
-}
-
-function getSelectedModels(){ return Array.from(selectedModels).join(','); }
-
-document.addEventListener('DOMContentLoaded', function(){
-  const preset=document.getElementById('tPreset');
-  if(preset) preset.addEventListener('change', function(){
-    const p=tPresets[this.value];
-    if(!p) return;
-    document.getElementById('tQuota').value=p.quota;
-    document.getElementById('tRpm').value=p.rpm;
-    document.getElementById('tTpm').value=p.tpm;
-    document.getElementById('tUnlimited').checked=false;
-    this.value='';
+// 模型分组下拉：/admin/groups + 默认 default
+async function loadGroupOptions(){
+  const names = [];
+  try{
+    const res = await api('/admin/groups');
+    if(res.ok){
+      const d = await res.json();
+      (d.groups||[]).forEach(function(g){ if(g && g.name) names.push(g.name); });
+    }
+  }catch(e){ /* 分组接口不可用时仅保留 default */ }
+  if(names.indexOf('default') === -1) names.unshift('default');
+  const opts = names.map(function(n){ return '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>'; }).join('');
+  ['btGroup', 'etGroup'].forEach(function(id){
+    const sel = document.getElementById(id);
+    if(sel){ sel.innerHTML = opts; sel.value = 'default'; }
   });
-  const filter=document.getElementById('tModelsFilter');
-  if(filter){
-    filter.addEventListener('input', renderModelPicker);
-    filter.addEventListener('keydown', function(ev){
-      if(ev.key==='Enter'){
-        ev.preventDefault();
-        const val=this.value.trim();
-        if(val && !selectedModels.has(val)){
-          selectedModels.add(val);
-          if(allModels.indexOf(val)===-1) allModels.push(val);
-          this.value='';
-          renderModelPicker();
-        }
-      }
-    });
-  }
-  const chips=document.getElementById('tModelsChips');
-  if(chips){
-    chips.addEventListener('click', function(ev){
-      if(ev.target && ev.target.classList.contains('chip-x')){
-        const chip=ev.target.closest('.chip');
-        if(chip) removeModel(chip.getAttribute('data-m'));
-      }
-    });
-  }
-});
+}
 
-async function loadTokens(){ const res=await api('/admin/tokens'); if(!res.ok) return; const ts=await res.json(); tokenList=ts;
-  document.getElementById('tokenTable').innerHTML = ts.map(t=>`<tr><td><code>${escapeHtml(t.key)}</code></td><td>${escapeHtml(t.name||'-')}</td><td>${escapeHtml(t.group||'default')}</td>
+function ensureGroupOption(id, name){
+  const sel = document.getElementById(id);
+  if(!sel || !name) return;
+  let found = false;
+  Array.prototype.forEach.call(sel.options, function(o){ if(o.value === name) found = true; });
+  if(!found){
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  }
+  sel.value = name;
+}
+
+// 模型池：/api/models_list + /api/models_public 合并去重
+async function loadModelOptions(){
+  const seen = {};
+  for (const p of ['/api/models_list', '/api/models_public']) {
+    try {
+      const r = await api(p);
+      if (!r.ok) continue;
+      const d = await r.json();
+      (d.models || []).forEach(function(m){
+        m = String(m).trim();
+        if (m && !seen[m]) { seen[m] = 1; modelPool.push(m); }
+      });
+    } catch (e) { /* 单个接口失败不影响 */ }
+  }
+  modelPool.sort();
+  renderBatchPicker();
+  renderEditPicker();
+}
+
+function renderBatchPicker(){
+  const list = document.getElementById('btModelList');
+  if (!list) return;
+  const q = (document.getElementById('btModelFilter').value || '').trim().toLowerCase();
+  const opts = modelPool.filter(m => m.toLowerCase().indexOf(q) !== -1);
+  list.innerHTML = opts.length === 0
+    ? '<div class="ms-empty muted">无匹配模型，可输入后回车添加自定义</div>'
+    : opts.map(m =>
+        '<div class="ms-item' + (batchModels.has(m) ? ' selected' : '') + '" data-m="' + escapeHtml(m) + '" onclick="toggleBatchModel(this)">' +
+        (batchModels.has(m) ? '☑ ' : '☐ ') + escapeHtml(m) + '</div>'
+      ).join('');
+  renderBatchChips();
+}
+
+function toggleBatchModel(item){
+  const m = item.getAttribute('data-m');
+  if (batchModels.has(m)) batchModels.delete(m); else batchModels.add(m);
+  renderBatchPicker();
+}
+
+function renderBatchChips(){
+  const box = document.getElementById('btChips');
+  if (!box) return;
+  box.innerHTML = batchModels.size
+    ? Array.from(batchModels).map(m =>
+        '<span class="chip" data-m="' + escapeHtml(m) + '">' + escapeHtml(m) + '<button type="button" class="chip-x" title="移除">×</button></span>'
+      ).join('')
+    : '<span class="muted small">留空 = 全部</span>';
+}
+
+function renderEditPicker(){
+  const list = document.getElementById('etModelList');
+  if (!list) return;
+  const q = (document.getElementById('etModelFilter').value || '').trim().toLowerCase();
+  const opts = modelPool.filter(m => m.toLowerCase().indexOf(q) !== -1);
+  list.innerHTML = opts.length === 0
+    ? '<div class="ms-empty muted">无匹配模型，可输入后回车添加自定义</div>'
+    : opts.map(m =>
+        '<div class="ms-item' + (editModels.has(m) ? ' selected' : '') + '" data-m="' + escapeHtml(m) + '" onclick="toggleEditModel(this)">' +
+        (editModels.has(m) ? '☑ ' : '☐ ') + escapeHtml(m) + '</div>'
+      ).join('');
+  renderEditChips();
+}
+
+function toggleEditModel(item){
+  const m = item.getAttribute('data-m');
+  if (editModels.has(m)) editModels.delete(m); else editModels.add(m);
+  renderEditPicker();
+}
+
+function renderEditChips(){
+  const box = document.getElementById('etChips');
+  if (!box) return;
+  box.innerHTML = editModels.size
+    ? Array.from(editModels).map(m =>
+        '<span class="chip" data-m="' + escapeHtml(m) + '">' + escapeHtml(m) + '<button type="button" class="chip-x" title="移除">×</button></span>'
+      ).join('')
+    : '<span class="muted small">留空 = 全部</span>';
+}
+
+function addBatchCustom(){
+  const val = document.getElementById('btModelFilter').value.trim();
+  if (!val) return;
+  if (!batchModels.has(val)) {
+    batchModels.add(val);
+    if (modelPool.indexOf(val) === -1) modelPool.push(val);
+  }
+  document.getElementById('btModelFilter').value = '';
+  renderBatchPicker();
+}
+
+function addEditCustom(){
+  const val = document.getElementById('etModelFilter').value.trim();
+  if (!val) return;
+  if (!editModels.has(val)) {
+    editModels.add(val);
+    if (modelPool.indexOf(val) === -1) modelPool.push(val);
+  }
+  document.getElementById('etModelFilter').value = '';
+  renderEditPicker();
+}
+
+function applyPreset(selId, quotaId, rpmId, tpmId, unlimitedId){
+  const p = tPresets[document.getElementById(selId).value];
+  if (!p) return;
+  document.getElementById(quotaId).value = p.quota;
+  document.getElementById(rpmId).value = p.rpm;
+  document.getElementById(tpmId).value = p.tpm;
+  if (unlimitedId) document.getElementById(unlimitedId).checked = false;
+  document.getElementById(selId).value = '';
+}
+
+function getBatchModels(){ return Array.from(batchModels).join(','); }
+function getEditModels(){ return Array.from(editModels).join(','); }
+
+async function batchTokens(){
+  const names = document.getElementById('btNames').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+  const msg = document.getElementById('btMsg');
+  if (!names.length) { msg.textContent = '请输入至少一个名称'; msg.style.color = 'var(--danger)'; return; }
+  const exp = document.getElementById('btExpiredAt').value;
+  const base = {
+    group: document.getElementById('btGroup').value || 'default',
+    quota: document.getElementById('btUnlimited').checked ? -1 : (parseInt(document.getElementById('btQuota').value, 10) || -1),
+    unlimited: document.getElementById('btUnlimited').checked ? 1 : 0,
+    expired_at: exp ? new Date(exp).toISOString() : null,
+    models: getBatchModels(),
+    rpm: parseInt(document.getElementById('btRpm').value, 10) || 0,
+    tpm: parseInt(document.getElementById('btTpm').value, 10) || 0,
+    status: 1
+  };
+  msg.textContent = '生成中…'; msg.style.color = 'var(--fg-2)';
+  const done = [], failed = [];
+  for (const name of names) {
+    try {
+      const res = await api('/admin/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({}, base, { name: name })) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.key) { done.push(d); }
+      else { failed.push(name + (d.error || d.message ? '：' + (d.error || d.message) : '：HTTP ' + res.status)); }
+    } catch (e) {
+      failed.push(name + '：请求出错');
+    }
+  }
+  msg.textContent = '成功 ' + done.length + ' 个' + (failed.length ? '，失败 ' + failed.length + ' 个' : '');
+  msg.style.color = failed.length ? 'var(--danger)' : 'var(--success)';
+  if (failed.length) msg.innerHTML += '<br><span style="font-weight:normal;font-size:12px">' + escapeHtml(failed.join('；')) + '</span>';
+  batchLastResult = done;
+  renderBatchResult(done);
+  document.getElementById('btExportBtn').style.display = done.length ? '' : 'none';
+  document.getElementById('btNames').value = '';
+  loadTokens();
+}
+
+function renderBatchResult(tokens){
+  const box = document.getElementById('btResult');
+  if (!tokens || !tokens.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<table><thead><tr><th>API 密钥</th><th>名称</th><th>分组</th><th>额度</th><th>允许模型</th></tr></thead><tbody>' +
+    tokens.map(function(t){
+      return '<tr><td><code>' + escapeHtml(t.key) + '</code></td><td>' + escapeHtml(t.name || '-') + '</td><td>' + escapeHtml(t.group || 'default') + '</td>' +
+        '<td>' + escapeHtml(String(t.quota)) + '</td><td>' + escapeHtml(t.models || '全部') + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function exportBatchJSON(){
+  if (!batchLastResult || !batchLastResult.length) return;
+  const blob = new Blob([JSON.stringify(batchLastResult, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'batch_tokens.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+}
+
+async function loadTokens(){ const res = await api('/admin/tokens'); if(!res.ok) return; const ts = await res.json(); tokenList = ts;
+  document.getElementById('tokenTable').innerHTML = ts.map(t => `<tr><td><code>${escapeHtml(t.key)}</code></td><td>${escapeHtml(t.name||'-')}</td><td>${escapeHtml(t.group||'default')}</td>
     <td>${escapeHtml(t.models||'全部')}</td>
     <td>${escapeHtml(String(t.used))} / ${t.unlimited?'不限':(t.quota<0?'不限':escapeHtml(String(t.quota)))}</td>
     <td>${t.rpm?escapeHtml(String(t.rpm)):'0'}</td>
@@ -168,43 +333,98 @@ async function loadTokens(){ const res=await api('/admin/tokens'); if(!res.ok) r
     <td><span class="status ${t.status?'status-on':'status-off'}">${t.status?'启用':'禁用'}</span></td>
     <td><button class="btn btn-link" onclick="editToken('${escapeHtml(t.key)}')">编辑</button>
     <button class="btn btn-danger" onclick="deleteToken('${escapeHtml(t.key)}')">删除</button></td></tr>`).join(''); }
-let editingKey=null;
-function isoToLocal(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; const p=n=>String(n).padStart(2,'0');
+
+function isoToLocal(s){ if(!s) return ''; const d = new Date(s); if(isNaN(d)) return ''; const p = n => String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
-function editToken(key){ const t=tokenList.find(x=>x.key===key); if(!t) return; editingKey=key;
-  document.getElementById('tName').value=t.name||''; document.getElementById('tGroup').value=t.group||'default';
-  document.getElementById('tQuota').value=t.unlimited?-1:(t.quota<0?-1:t.quota);
-  document.getElementById('tUnlimited').checked=t.unlimited===1;
-  selectedModels=new Set(String(t.models||'').split(',').map(s=>s.trim()).filter(Boolean)); renderModelPicker();
-  document.getElementById('tRpm').value=t.rpm||0; document.getElementById('tTpm').value=t.tpm||0;
-  document.getElementById('tExpiredAt').value=isoToLocal(t.expired_at);
-  document.getElementById('tUpdateBtn').style.display=''; document.getElementById('editHint').textContent='编辑中：'+key.slice(0,8)+'…'; }
-async function updateToken(){ if(!editingKey) return;
-  const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
-    quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
-    expired_at:exp?new Date(exp).toISOString():null, models:getSelectedModels(), status:1,
-    rpm:parseInt(v('tRpm'),10)||0, tpm:parseInt(v('tTpm'),10)||0};
-  const res=await api('/admin/tokens/'+editingKey,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  if(!res.ok){ alert('更新失败：'+(await res.text())); return; }
-  editingKey=null; document.getElementById('tUpdateBtn').style.display='none'; document.getElementById('editHint').textContent='';
-  ['tName','tGroup','tExpiredAt','tRpm','tTpm'].forEach(i=>document.getElementById(i).value='');
-  selectedModels.clear(); renderModelPicker(); loadTokens(); }
-async function exportTokens(){ const res=await api('/admin/tokens'); const ts=await res.json();
-  const blob=new Blob([JSON.stringify(ts,null,2)],{type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='tokens.json'; a.click(); URL.revokeObjectURL(a.href); }
-async function addToken(){ const exp=document.getElementById('tExpiredAt').value; const data={name:v('tName'),group:v('tGroup'),
-  quota:document.getElementById('tUnlimited').checked?-1:(parseInt(v('tQuota'))||-1),unlimited:document.getElementById('tUnlimited').checked?1:0,
-  expired_at:exp?new Date(exp).toISOString():null, models:getSelectedModels(),
-  rpm:parseInt(v('tRpm'),10)||0, tpm:parseInt(v('tTpm'),10)||0};
-  const res=await api('/admin/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  const t=await res.json(); alert('已生成令牌：\n'+t.key); loadTokens(); document.getElementById('tName').value='';
-  selectedModels.clear(); renderModelPicker(); document.getElementById('tExpiredAt').value=''; document.getElementById('tRpm').value='0'; document.getElementById('tTpm').value='0'; }
-async function deleteToken(key){ if(!confirm('确认删除该令牌？'))return; await api('/admin/tokens/'+key,{method:'DELETE'}); loadTokens(); }
+
+function editToken(key){
+  const t = tokenList.find(x => x.key === key);
+  if (!t) return;
+  editingKey = key;
+  document.getElementById('etKeyHint').textContent = key.slice(0, 8) + '…';
+  document.getElementById('etName').value = t.name || '';
+  ensureGroupOption('etGroup', t.group || 'default');
+  document.getElementById('etQuota').value = t.unlimited ? -1 : (t.quota < 0 ? -1 : t.quota);
+  document.getElementById('etUnlimited').checked = t.unlimited === 1;
+  editModels = new Set(String(t.models || '').split(',').map(s => s.trim()).filter(Boolean));
+  document.getElementById('etRpm').value = t.rpm || 0;
+  document.getElementById('etTpm').value = t.tpm || 0;
+  document.getElementById('etExpiredAt').value = isoToLocal(t.expired_at);
+  document.getElementById('etMsg').textContent = '';
+  document.getElementById('tokenModal').style.display = 'flex';
+  renderEditPicker();
+}
+
+function closeTokenModal(){
+  document.getElementById('tokenModal').style.display = 'none';
+  editingKey = null;
+  editModels.clear();
+}
+
+async function saveToken(){
+  if (!editingKey) return;
+  const msg = document.getElementById('etMsg');
+  const exp = document.getElementById('etExpiredAt').value;
+  const data = {
+    name: document.getElementById('etName').value.trim(),
+    group: document.getElementById('etGroup').value || 'default',
+    quota: document.getElementById('etUnlimited').checked ? -1 : (parseInt(document.getElementById('etQuota').value, 10) || -1),
+    unlimited: document.getElementById('etUnlimited').checked ? 1 : 0,
+    expired_at: exp ? new Date(exp).toISOString() : null,
+    models: getEditModels(),
+    status: 1,
+    rpm: parseInt(document.getElementById('etRpm').value, 10) || 0,
+    tpm: parseInt(document.getElementById('etTpm').value, 10) || 0
+  };
+  try {
+    const res = await api('/admin/tokens/' + editingKey, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (!res.ok) {
+      let t = '';
+      try { const d = await res.json(); t = d.error || d.message || ''; } catch (e) { /* 空响应 */ }
+      msg.textContent = '保存失败：' + (t || res.status); msg.style.color = 'var(--danger)'; return;
+    }
+    msg.textContent = '已保存'; msg.style.color = 'var(--success)';
+    closeTokenModal();
+    loadTokens();
+  } catch (e) {
+    msg.textContent = '请求出错：' + (e.message || e); msg.style.color = 'var(--danger)';
+  }
+}
+
+async function exportTokens(){ const res = await api('/admin/tokens'); const ts = await res.json();
+  const blob = new Blob([JSON.stringify(ts, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'tokens.json'; a.click(); URL.revokeObjectURL(a.href); }
+
+async function deleteToken(key){ if(!confirm('确认删除该令牌？')) return; await api('/admin/tokens/' + key, { method: 'DELETE' }); loadTokens(); }
+
+document.addEventListener('DOMContentLoaded', function(){
+  const bpreset = document.getElementById('btPreset');
+  bpreset.addEventListener('change', function(){ applyPreset('btPreset', 'btQuota', 'btRpm', 'btTpm', 'btUnlimited'); });
+  const bf = document.getElementById('btModelFilter');
+  bf.addEventListener('input', renderBatchPicker);
+  bf.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); addBatchCustom(); } });
+  document.getElementById('btChips').addEventListener('click', function(ev){
+    if (ev.target && ev.target.classList.contains('chip-x')) {
+      const chip = ev.target.closest('.chip');
+      if (chip) { batchModels.delete(chip.getAttribute('data-m')); renderBatchPicker(); }
+    }
+  });
+  const ef = document.getElementById('etModelFilter');
+  ef.addEventListener('input', renderEditPicker);
+  ef.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); addEditCustom(); } });
+  document.getElementById('etChips').addEventListener('click', function(ev){
+    if (ev.target && ev.target.classList.contains('chip-x')) {
+      const chip = ev.target.closest('.chip');
+      if (chip) { editModels.delete(chip.getAttribute('data-m')); renderEditPicker(); }
+    }
+  });
+});
 
 (async () => {
   try { await ensureAuth(); } catch (e) { return; }
   loadTokens();
   loadModelOptions();
+  loadGroupOptions();
 })();
 </script>
 </body>
